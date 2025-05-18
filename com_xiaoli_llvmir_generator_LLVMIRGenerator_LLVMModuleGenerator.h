@@ -9,6 +9,14 @@ extern "C" {
 #endif
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    createFunction
+ * Signature: (Lldk/l/lg/ir/base/IRFunction;)V
+ */
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createFunction
+  (JNIEnv *, jobject, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitFunction
  * Signature: (Lldk/l/lg/ir/base/IRFunction;Ljava/lang/Object;)Ljava/lang/Object;
  */
@@ -117,6 +125,14 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRAsm;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitAsm
+  (JNIEnv *, jobject, jobject, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    visitTypeCast
+ * Signature: (Lldk/l/lg/ir/instruction/IRTypeCast;Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitTypeCast
   (JNIEnv *, jobject, jobject, jobject);
 
 /*
