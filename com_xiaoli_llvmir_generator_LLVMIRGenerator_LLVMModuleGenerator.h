@@ -105,6 +105,14 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    visitInvoke
+ * Signature: (Lldk/l/lg/ir/instruction/IRInvoke;Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitInvoke
+  (JNIEnv *, jobject, jobject, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitStackAllocate
  * Signature: (Lldk/l/lg/ir/instruction/IRStackAllocate;Ljava/lang/Object;)Ljava/lang/Object;
  */

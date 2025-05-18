@@ -342,8 +342,6 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visit
     auto* name = reinterpret_cast<jstring>(env->GetObjectField(
         irConditionalJump, env->GetFieldID(env->GetObjectClass(irConditionalJump), "target", "Ljava/lang/String;")));
     auto* target = env->GetStringUTFChars(name, nullptr);
-    operand1->getType()->print(llvm::outs());
-    operand2->getType()->print(llvm::outs());
     if (isAtomic)
     {
     }
@@ -762,6 +760,74 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     return nullptr;
 }
 
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitInvoke(
+    JNIEnv* env, jobject thisPtr, jobject irInvoke, jobject additional)
+{
+    jclass clazz = env->GetObjectClass(thisPtr);
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* stack = reinterpret_cast<std::stack<llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "stack", "J")));
+    auto* virtualRegister2Value = reinterpret_cast<std::map<std::string, llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "virtualRegister2Value", "J")));
+
+    jclass irInvokeClazz = env->GetObjectClass(irInvoke);
+    auto* returnTypeObject = env->GetObjectField(irInvoke, env->GetFieldID(irInvokeClazz, "returnType",
+                                                                           "Lldk/l/lg/ir/type/IRType;"));
+    auto* addressObject = env->GetObjectField(irInvoke, env->GetFieldID(irInvokeClazz, "address",
+                                                                        "Lldk/l/lg/ir/operand/IROperand;"));
+    auto* argumentTypesObject = reinterpret_cast<jobjectArray>(env->GetObjectField(
+        irInvoke, env->GetFieldID(irInvokeClazz, "argumentTypes",
+                                  "[Lldk/l/lg/ir/type/IRType;")));
+    auto* argumentsObject = reinterpret_cast<jobjectArray>(env->GetObjectField(
+        irInvoke, env->GetFieldID(irInvokeClazz, "arguments",
+                                  "[Lldk/l/lg/ir/operand/IROperand;")));
+    auto* resultObject = env->GetObjectField(irInvoke, env->GetFieldID(irInvokeClazz, "result",
+                                                                       "Lldk/l/lg/ir/operand/IRVirtualRegister;"));
+    jmethodID visitMethod = env->GetMethodID(clazz, "visit",
+                                             "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
+
+    env->CallObjectMethod(thisPtr, visitMethod, addressObject, additional);
+    if (stack->empty()) return nullptr;
+    auto* address = stack->top();
+    stack->pop();
+
+    auto* returnType = getType(env, returnTypeObject, context);
+    std::vector<llvm::Type*> argumentTypes;
+    for (int i = 0; i < env->GetArrayLength(argumentTypesObject); i++)
+    {
+        auto* argumentTypeObject = env->GetObjectArrayElement(argumentTypesObject, i);
+        auto* argumentType = getType(env, argumentTypeObject, context);
+        argumentTypes.push_back(argumentType);
+    }
+    llvm::FunctionType* functionType = llvm::FunctionType::get(returnType, argumentTypes, false);
+
+    std::vector<llvm::Value*> arguments;
+    for (int i = 0; i < env->GetArrayLength(argumentsObject); i++)
+    {
+        auto* argumentObject = env->GetObjectArrayElement(argumentsObject, i);
+        env->CallObjectMethod(thisPtr, visitMethod, argumentObject, additional);
+        if (stack->empty()) return nullptr;
+        auto* argument = stack->top();
+        stack->pop();
+        arguments.push_back(argument);
+    }
+
+    auto* result = builder->CreateCall(functionType, address, arguments);
+
+    if (resultObject != nullptr)
+    {
+        auto* resultRegisterNameObject = reinterpret_cast<jstring>(env->GetObjectField(
+            resultObject, env->GetFieldID(env->GetObjectClass(resultObject), "name", "Ljava/lang/String;")));
+        virtualRegister2Value->insert(
+            std::make_pair(std::string(env->GetStringUTFChars(resultRegisterNameObject, nullptr)), result));
+    }
+
+    return nullptr;
+}
+
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitStackAllocate(
     JNIEnv* env, jobject thisPtr, jobject irStackAllocate, jobject additional)
 {
@@ -905,9 +971,9 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
 
     auto* name = env->GetStringUTFChars(reinterpret_cast<jstring>(env->GetObjectField(
                                             kind, env->GetFieldID(env->GetObjectClass(kind), "name",
-                                                                    "Ljava/lang/String;"))), nullptr);
+                                                                  "Ljava/lang/String;"))), nullptr);
     jmethodID visitMethod = env->GetMethodID(clazz, "visit",
-                                         "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
+                                             "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
     env->CallObjectMethod(thisPtr, visitMethod, sourceObject, additional);
     if (stack->empty()) return nullptr;
     auto* source = stack->top();
@@ -917,16 +983,20 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     if (strcmp(name, "zext") == 0)
     {
         result = builder->CreateZExt(source, getType(env, targetType, context));
-    } else if (strcmp(name, "sext") == 0)
+    }
+    else if (strcmp(name, "sext") == 0)
     {
         result = builder->CreateSExt(source, getType(env, targetType, context));
-    }else if (strcmp(name, "itof") == 0)
+    }
+    else if (strcmp(name, "itof") == 0)
     {
         result = builder->CreateSIToFP(source, getType(env, targetType, context));
-    } else if (strcmp(name, "ftoi") == 0)
+    }
+    else if (strcmp(name, "ftoi") == 0)
     {
         result = builder->CreateFPToSI(source, getType(env, targetType, context));
-    }else if (strcmp(name, "fext") == 0)
+    }
+    else if (strcmp(name, "fext") == 0)
     {
         result = builder->CreateFPExt(source, getType(env, targetType, context));
     }
