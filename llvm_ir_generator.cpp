@@ -22,7 +22,23 @@ JNIEXPORT jlong JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_create
 JNIEXPORT jlong JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_createLLVMModule(
     JNIEnv* env, jclass clazz, jlong llvmContext)
 {
-    return reinterpret_cast<jlong>(new llvm::Module("module", *reinterpret_cast<llvm::LLVMContext*>(llvmContext)));
+    auto* module = new llvm::Module("module", *reinterpret_cast<llvm::LLVMContext*>(llvmContext));
+    auto* mallocFunctionType = llvm::FunctionType::get(
+        llvm::Type::getInt8Ty(*reinterpret_cast<llvm::LLVMContext*>(llvmContext))->getPointerTo(),
+        {llvm::Type::getInt64Ty(*reinterpret_cast<llvm::LLVMContext*>(llvmContext))}, false);
+    module->getOrInsertFunction("malloc", mallocFunctionType);
+    auto* freeFunctionType = llvm::FunctionType::get(
+        llvm::Type::getVoidTy(*reinterpret_cast<llvm::LLVMContext*>(llvmContext)),
+        {llvm::Type::getInt8Ty(*reinterpret_cast<llvm::LLVMContext*>(llvmContext))->getPointerTo()}, false);
+    module->getOrInsertFunction("free", freeFunctionType);
+    auto* reallocFunctionType = llvm::FunctionType::get(
+        llvm::Type::getInt8Ty(*reinterpret_cast<llvm::LLVMContext*>(llvmContext))->getPointerTo(),
+        {
+            llvm::Type::getInt8Ty(*reinterpret_cast<llvm::LLVMContext*>(llvmContext))->getPointerTo(),
+            llvm::Type::getInt64Ty(*reinterpret_cast<llvm::LLVMContext*>(llvmContext))
+        }, false);
+    module->getOrInsertFunction("realloc", reallocFunctionType);
+    return reinterpret_cast<jlong>(module);
 }
 
 JNIEXPORT jlong JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_createLLVMBuilder(
@@ -241,8 +257,18 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         {
             auto* instruction = env->CallObjectMethod(iterator2, nextMethod2);
             env->CallObjectMethod(thisPtr, visitMethod, instruction, additional);
-            // 临时解决方案
             while (!stack->empty())stack->pop();
+        }
+    }
+
+    for (auto it = function->begin(); it != function->end(); ++it)
+    {
+        if (it != function->begin() && !it->hasNPredecessorsOrMore(1))
+        {
+            auto tmp = it;
+            --tmp;
+            builder->SetInsertPoint(&*tmp);
+            builder->CreateBr(&*it);
         }
     }
 
@@ -271,8 +297,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
             thisPtr, env->GetFieldID(clazz, "stack", "J")));
         if (stack->empty())
         {
-            // Temp
-            builder->CreateRetVoid();
+            // TODO dump error
             return nullptr;
         }
         builder->CreateRet(stack->top());
@@ -933,14 +958,58 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         auto* resource = stack->top();
         stack->pop();
         args.push_back(resource);
-        auto* name = reinterpret_cast<jstring>(env->GetObjectArrayElement(names, i));
-        map.insert(std::make_pair(env->GetStringUTFChars(name, nullptr), i));
+        auto* name = env->GetStringUTFChars(reinterpret_cast<jstring>(env->GetObjectArrayElement(names, i)), nullptr);
+        map.insert(std::make_pair(name, i));
+    }
+    for (jsize i = 0; i < env->GetArrayLength(types); ++i)
+    {
+        jobject resourceObject = env->GetObjectArrayElement(resources, i);
+
+        const char* virtualRegisterName = "ldk/l/lg/ir/operand/IRVirtualRegister";
+        if (env->IsInstanceOf(resourceObject, env->FindClass(virtualRegisterName)))
+        {
+            constraints += (i > 0 ? "," : "") + std::string("r"); // Register constraint
+        }
+        else if (env->IsInstanceOf(resourceObject, env->FindClass("ldk/l/lg/ir/operand/IRConstant")))
+        {
+            constraints += (i > 0 ? "," : "") + std::string("i");
+        }
+        else if (env->IsInstanceOf(resourceObject, env->FindClass("ldk/l/lg/ir/structure/IRField")))
+        {
+            constraints += (i > 0 ? "," : "") + std::string("m");
+        }
+        else
+        {
+            constraints += (i > 0 ? "," : "") + std::string("g");
+        }
     }
     std::string code = env->GetStringUTFChars(codeString, nullptr);
-    // TODO process code and constraints
+    std::string newCode;
+    int i = 0;
+    while (i < env->GetStringUTFLength(codeString))
+    {
+        char c = code[i++];
+        if (c == '@')
+        {
+            std::string name;
+            while (true)
+            {
+                c = code[i];
+                if (c == ',' || std::isspace(c)) break;
+                name += c;
+                i++;
+            }
+            newCode += "%";
+            newCode += std::to_string(map[name]);
+        }
+        else
+        {
+            newCode += c;
+        }
+    }
 
     auto* functionType = llvm::FunctionType::get(llvm::Type::getVoidTy(*context), argTypes, false);
-    auto* inlineAsm = llvm::InlineAsm::get(functionType, code, constraints, false);
+    auto* inlineAsm = llvm::InlineAsm::get(functionType, newCode, constraints, false);
     builder->CreateCall(inlineAsm, args);
 
     return nullptr;
@@ -1004,6 +1073,164 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         target, env->GetFieldID(env->GetObjectClass(target), "name", "Ljava/lang/String;")));
     virtualRegister2Value->insert(std::make_pair(env->GetStringUTFChars(targetRegisterName, nullptr), result));
 
+    return nullptr;
+}
+
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitMalloc(
+    JNIEnv* env, jobject thisPtr, jobject irMalloc, jobject additional)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+    auto* stack = reinterpret_cast<std::stack<llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "stack", "J")));
+    auto* virtualRegister2Value = reinterpret_cast<std::map<std::string, llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "virtualRegister2Value", "J")));
+
+    auto* irMallocClazz = env->GetObjectClass(irMalloc);
+    auto* sizeObject = env->GetObjectField(
+        irMalloc, env->GetFieldID(irMallocClazz, "size", "Lldk/l/lg/ir/operand/IROperand;"));
+    auto* targetRegisterObject = env->GetObjectField(
+        irMalloc, env->GetFieldID(irMallocClazz, "target", "Lldk/l/lg/ir/operand/IRVirtualRegister;"));
+
+    auto* visitMethod = env->GetMethodID(clazz, "visit",
+                                         "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
+    env->CallObjectMethod(thisPtr, visitMethod, sizeObject, additional);
+    if (stack->empty()) return nullptr;
+    auto* size = stack->top();
+    stack->pop();
+    auto* targetRegisterName = env->GetStringUTFChars(reinterpret_cast<jstring>(env->GetObjectField(
+                                                          targetRegisterObject, env->GetFieldID(
+                                                              env->GetObjectClass(targetRegisterObject), "name",
+                                                              "Ljava/lang/String;"))), nullptr);
+    virtualRegister2Value->insert(std::make_pair(targetRegisterName,
+                                                 builder->CreateCall(module->getFunction("malloc"), {size})));
+
+    return nullptr;
+}
+
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitFree(
+    JNIEnv* env, jobject thisPtr, jobject irFree, jobject additional)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+    auto* stack = reinterpret_cast<std::stack<llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "stack", "J")));
+    auto* virtualRegister2Value = reinterpret_cast<std::map<std::string, llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "virtualRegister2Value", "J")));
+
+    auto* irFreeClazz = env->GetObjectClass(irFree);
+    auto* ptrOperand = env->GetObjectField(
+        irFree, env->GetFieldID(irFreeClazz, "ptr", "Lldk/l/lg/ir/operand/IROperand;"));
+
+    auto* visitMethod = env->GetMethodID(clazz, "visit",
+                                         "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
+    env->CallObjectMethod(thisPtr, visitMethod, ptrOperand, additional);
+    if (stack->empty()) return nullptr;
+    auto* ptr = stack->top();
+    stack->pop();
+    builder->CreateCall(module->getFunction("free"), {ptr});
+
+    return nullptr;
+}
+
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitRealloc(
+    JNIEnv* env, jobject thisPtr, jobject irRealloc, jobject additional)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+    auto* stack = reinterpret_cast<std::stack<llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "stack", "J")));
+    auto* virtualRegister2Value = reinterpret_cast<std::map<std::string, llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "virtualRegister2Value", "J")));
+
+    auto* irReallocClazz = env->GetObjectClass(irRealloc);
+    auto* ptrOperand = env->GetObjectField(
+        irRealloc, env->GetFieldID(irReallocClazz, "ptr", "Lldk/l/lg/ir/operand/IROperand;"));
+    auto* sizeOperand = env->GetObjectField(
+        irRealloc, env->GetFieldID(irReallocClazz, "size", "Lldk/l/lg/ir/operand/IROperand;"));
+    auto* targetRegisterObject = env->GetObjectField(
+        irRealloc, env->GetFieldID(irReallocClazz, "target", "Lldk/l/lg/ir/operand/IRVirtualRegister;"));
+
+    auto* visitMethod = env->GetMethodID(clazz, "visit",
+                                         "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
+    env->CallObjectMethod(thisPtr, visitMethod, ptrOperand, additional);
+    if (stack->empty()) return nullptr;
+    auto* ptr = stack->top();
+    stack->pop();
+    env->CallObjectMethod(thisPtr, visitMethod, sizeOperand, additional);
+    if (stack->empty()) return nullptr;
+    auto* size = stack->top();
+    stack->pop();
+
+    auto* targetRegisterName = env->GetStringUTFChars(reinterpret_cast<jstring>(env->GetObjectField(
+                                                          targetRegisterObject, env->GetFieldID(
+                                                              env->GetObjectClass(targetRegisterObject), "name",
+                                                              "Ljava/lang/String;"))), nullptr);
+    virtualRegister2Value->insert(std::make_pair(targetRegisterName,
+                                                 builder->CreateCall(module->getFunction("realloc"), {ptr, size})));
+
+    return nullptr;
+}
+
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitPhi(
+    JNIEnv* env, jobject thisPtr, jobject irPhi, jobject additional)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+    auto* stack = reinterpret_cast<std::stack<llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "stack", "J")));
+    auto* virtualRegister2Value = reinterpret_cast<std::map<std::string, llvm::Value*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "virtualRegister2Value", "J")));
+    auto* basicBlockMap = reinterpret_cast<std::map<std::string, llvm::BasicBlock*>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "basicBlockMap", "J")));
+
+    auto* irPhiClazz = env->GetObjectClass(irPhi);
+    auto* typeObject = env->GetObjectField(
+        irPhi, env->GetFieldID(irPhiClazz, "type", "Lldk/l/lg/ir/operand/IRType;"));
+    auto* labels = reinterpret_cast<jobjectArray>(env->GetObjectField(
+        irPhi, env->GetFieldID(irPhiClazz, "labels", "[Ljava/lang/String;")));
+    auto* values = reinterpret_cast<jobjectArray>(env->GetObjectField(
+        irPhi, env->GetFieldID(irPhiClazz, "values", "[Lldk/l/lg/ir/operand/IROperand;")));
+
+    auto* type = getType(env, typeObject, context);
+    auto* phi = builder->CreatePHI(type, env->GetArrayLength(labels));
+
+    auto* visitMethod = env->GetMethodID(clazz, "visit",
+                                         "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
+    for (int i = 0; i < env->GetArrayLength(labels); i++)
+    {
+        auto* labelObject = reinterpret_cast<jstring>(env->GetObjectArrayElement(labels, i));
+        auto* label = env->GetStringUTFChars(labelObject, nullptr);
+        auto* basicBlock = basicBlockMap->at(label);
+
+        auto* valueObject = reinterpret_cast<jobject>(env->GetObjectArrayElement(values, i));
+        env->CallObjectMethod(thisPtr, visitMethod, valueObject, additional);
+        if (stack->empty()) return nullptr;
+        auto* value = stack->top();
+        stack->pop();
+        phi->addIncoming(value, basicBlock);
+    }
+    stack->push(phi);
     return nullptr;
 }
 
@@ -1120,6 +1347,8 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     JNIEnv* env, jobject thisPtr, jobject irMacro, jobject additional)
 {
     auto* clazz = env->GetObjectClass(thisPtr);
+    auto* irModule = env->GetObjectField(
+        thisPtr, env->GetFieldID(clazz, "module", "Lldk/l/lg/ir/IRModule;"));
     auto* module = reinterpret_cast<llvm::Module*>(env->GetLongField(
         thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
     auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
@@ -1132,6 +1361,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         irMacro, env->GetFieldID(irMacroClazz, "name", "Ljava/lang/String;")));
     auto* argsArray = reinterpret_cast<jobjectArray>(env->GetObjectField(
         irMacro, env->GetFieldID(irMacroClazz, "args", "[Ljava/lang/String;")));
+
     auto* name = env->GetStringUTFChars(nameObject, nullptr);
     if (strcmp(name, "field_address") == 0)
     {
@@ -1146,6 +1376,56 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         auto* functionName = env->GetStringUTFChars(reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 0)),
                                                     nullptr);
         stack->push(module->getFunction(functionName));
+    }
+    else if (strcmp(name, "structure_length") == 0)
+    {
+        auto* structures = env->GetObjectField(irModule, env->GetFieldID(env->GetObjectClass(irModule), "structures",
+                                                                         "Ljava/util/Map;"));
+        auto* structureName = env->GetStringUTFChars(
+            reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 0)),
+            nullptr);
+        auto* structure = env->CallObjectMethod(
+            structures, env->GetMethodID(env->GetObjectClass(structures), "get",
+                                         "(Ljava/lang/Object;)Ljava/lang/Object;"), env->NewStringUTF(structureName));
+        jlong length = env->CallLongMethod(structure, env->GetMethodID(env->GetObjectClass(structure), "getLength",
+                                                                       "()J"));
+        stack->push(llvm::ConstantInt::get(*context, llvm::APInt(64, length, false)));
+    }
+    else if (strcmp(name, "structure_field_offset") == 0)
+    {
+        auto* structures = env->GetObjectField(irModule, env->GetFieldID(env->GetObjectClass(irModule), "structures",
+                                                                         "Ljava/util/Map;"));
+        auto* structureName = env->GetStringUTFChars(
+            reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 0)),
+            nullptr);
+        auto* structure = env->CallObjectMethod(
+            structures, env->GetMethodID(env->GetObjectClass(structures), "get",
+                                         "(Ljava/lang/Object;)Ljava/lang/Object;"), env->NewStringUTF(structureName));
+        auto* fields = reinterpret_cast<jobjectArray>(env->GetObjectField(
+            structure, env->GetFieldID(env->GetObjectClass(structure), "fields", "[Lldk/l/lg/ir/structure/IRField;")));
+        auto* fieldName = env->GetStringUTFChars(
+            reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 1)),
+            nullptr);
+        jlong length = 0;
+        jlong offset = -1;
+        auto* irTypeClazz = env->FindClass("Lldk/l/lg/ir/type/IRType;");
+        auto* getLengthMethod = env->GetMethodID(irTypeClazz, "getLength", "(Lldk/l/lg/ir/type/IRType;)J");
+        for (int i = 0; i < env->GetArrayLength(fields); i++)
+        {
+            auto* field = env->GetObjectArrayElement(fields, i);
+            auto* _name = env->GetStringUTFChars(
+                reinterpret_cast<jstring>(env->GetObjectField(
+                    field, env->GetFieldID(env->GetObjectClass(field), "name", "Ljava/lang/String;"))),
+                nullptr);
+            if (strcmp(_name, fieldName) == 0)
+            {
+                offset = length;
+            }
+            auto* type = reinterpret_cast<llvm::Type*>(env->GetLongField(
+                field, env->GetFieldID(env->GetObjectClass(field), "type", "Lldk/l/lg/ir/type/IRType;")));
+            length += env->CallStaticLongMethod(irTypeClazz, getLengthMethod, type);
+        }
+        stack->push(llvm::ConstantInt::get(*context, llvm::APInt(64, offset, false)));
     }
     return nullptr;
 }

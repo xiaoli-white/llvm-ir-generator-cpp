@@ -145,6 +145,38 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    visitMalloc
+ * Signature: (Lldk/l/lg/ir/instruction/IRMalloc;Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitMalloc
+  (JNIEnv *, jobject, jobject, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    visitFree
+ * Signature: (Lldk/l/lg/ir/instruction/IRFree;Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitFree
+  (JNIEnv *, jobject, jobject, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    visitRealloc
+ * Signature: (Lldk/l/lg/ir/instruction/IRRealloc;Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitRealloc
+  (JNIEnv *, jobject, jobject, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    visitPhi
+ * Signature: (Lldk/l/lg/ir/operand/IRPhi;Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitPhi
+  (JNIEnv *, jobject, jobject, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitConstant
  * Signature: (Lldk/l/lg/ir/operand/IRConstant;Ljava/lang/Object;)Ljava/lang/Object;
  */
