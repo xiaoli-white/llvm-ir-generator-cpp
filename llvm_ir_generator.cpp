@@ -5,14 +5,21 @@
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Constants.h>
-#include "llvm/IR/InlineAsm.h"
-#include "llvm/Support/raw_ostream.h"
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include <iostream>
 #include <map>
 #include <stack>
 #include <llvm/IR/Argument.h>
-#include <llvm/IR/Argument.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Target/TargetOptions.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/IR/PassManager.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/Support/CodeGen.h>
 
 JNIEXPORT jlong JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_createLLVMContext(JNIEnv* env, jclass clazz)
 {
@@ -69,6 +76,90 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_dumpLLV
     JNIEnv* env, jclass clazz, jlong llvmModule)
 {
     reinterpret_cast<llvm::Module*>(llvmModule)->print(llvm::outs(), nullptr);
+}
+
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile(
+    JNIEnv* env, jclass clazz, jlong llvmModule, jobject options)
+{
+    auto* module = reinterpret_cast<llvm::Module*>(llvmModule);
+
+    auto* stringClazz = env->FindClass("java/lang/String");
+
+    auto* platformObject = reinterpret_cast<jstring>(env->CallObjectMethod(
+        options, env->GetMethodID(env->GetObjectClass(options), "get",
+                                  "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;"), "platform", stringClazz));
+    auto* outputObject = reinterpret_cast<jstring>(env->CallObjectMethod(
+        options, env->GetMethodID(env->GetObjectClass(options), "get",
+                                  "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;"), "output", stringClazz));
+
+    auto* platform = env->GetStringUTFChars(platformObject, nullptr);
+    auto* outputFilename = env->GetStringUTFChars(outputObject, nullptr);
+
+    auto objFIleName = std::string(outputFilename) + ".o";
+
+    LLVMInitializeX86TargetInfo();
+    LLVMInitializeX86Target();
+    LLVMInitializeX86TargetMC();
+    LLVMInitializeX86AsmParser();
+    LLVMInitializeX86AsmPrinter();
+
+    LLVMInitializeARMTargetInfo();
+    LLVMInitializeARMTarget();
+    LLVMInitializeARMTargetMC();
+    LLVMInitializeARMAsmParser();
+    LLVMInitializeARMAsmPrinter();
+
+    LLVMInitializeAArch64TargetInfo();
+    LLVMInitializeAArch64Target();
+    LLVMInitializeAArch64TargetMC();
+    LLVMInitializeAArch64AsmParser();
+    LLVMInitializeAArch64AsmPrinter();
+
+    module->setTargetTriple(platform);
+
+    std::string error;
+    auto* target = llvm::TargetRegistry::lookupTarget(platform, error);
+    if (!target)
+    {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), error.c_str());
+        return;
+    }
+    auto* cpu = "generic";
+    auto* features = "";
+    llvm::TargetOptions opt;
+    auto* targetMachine = target->createTargetMachine(platform, cpu, features, opt, llvm::Reloc::Model::PIC_);
+    module->setDataLayout(targetMachine->createDataLayout());
+    std::error_code ec;
+    llvm::raw_fd_ostream dest(objFIleName, ec, llvm::sys::fs::OF_None);
+    if (ec)
+    {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), ec.message().c_str());
+        return;
+    }
+    llvm::legacy::PassManager pass;
+    auto fileType = llvm::CodeGenFileType::ObjectFile;
+
+    if (targetMachine->addPassesToEmitFile(pass, dest, nullptr, fileType))
+    {
+        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                      "TargetMachine can't emit a file of this type");
+        return;
+    }
+
+    pass.run(*module);
+    dest.flush();
+
+    std::string linkCmd;
+#ifdef _WIN32
+    linkCmd = "link " + objFIleName + " /OUT:" + outputFilename;
+#else
+    linkCmd = "gcc " + objFileName + " -o " + outputFilename;
+#endif
+
+    if (system(linkCmd.c_str()))
+    {
+        env->ThrowNew(env->FindClass("java/lang/Exception"), "Linking failed");
+    }
 }
 
 llvm::Type* getType(JNIEnv* env, jobject irType, llvm::LLVMContext* context)

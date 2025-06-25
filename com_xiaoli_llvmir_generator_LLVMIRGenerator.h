@@ -63,6 +63,14 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_destroy
 JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_dumpLLVMModule
   (JNIEnv *, jclass, jlong);
 
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator
+ * Method:    compile
+ * Signature: (JLldk/l/util/option/Options;)V
+ */
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
+  (JNIEnv *, jclass, jlong, jobject);
+
 #ifdef __cplusplus
 }
 #endif
