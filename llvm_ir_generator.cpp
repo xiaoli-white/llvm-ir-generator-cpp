@@ -3,6 +3,7 @@
 #include "./com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator.h"
 #include <llvm/IR/Module.h>
 #include <llvm/IR/LLVMContext.h>
+#include "llvm/IR/GlobalVariable.h"
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/InlineAsm.h>
@@ -160,6 +161,9 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
     {
         env->ThrowNew(env->FindClass("java/lang/Exception"), "Linking failed");
     }
+
+    env->ReleaseStringUTFChars(platformObject, platform);
+    env->ReleaseStringUTFChars(outputObject, outputFilename);
 }
 
 llvm::Type* getType(JNIEnv* env, jobject irType, llvm::LLVMContext* context)
@@ -229,6 +233,255 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LL
                            env->GetStringUTFChars(name, nullptr), module);
 }
 
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitGlobalData(
+    JNIEnv* env, jobject thisPtr, jobject irGlobalData, jobject additional)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* irModule = env->GetObjectField(
+        thisPtr, env->GetFieldID(clazz, "module", "Lldk/l/lg/ir/IRModule;"));
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->
+        GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+
+    auto* globalDataClazz = env->GetObjectClass(irGlobalData);
+    auto* nameObject = reinterpret_cast<jstring>(env->GetObjectField(
+        irGlobalData, env->GetFieldID(globalDataClazz, "name", "Ljava/lang/String;")));
+    auto* sizeObject = env->GetObjectField(
+        irGlobalData, env->GetFieldID(globalDataClazz, "size", "Lldk/l/lg/ir/operand/IROperand;"));
+
+    auto* name = env->GetStringUTFChars(nameObject, nullptr);
+
+    auto* irConstantClazz = env->FindClass("ldk/l/lg/ir/operand/IRConstant");
+    auto* irMacroClazz = env->FindClass("ldk/l/lg/ir/operand/IRMacro");
+    if (sizeObject != nullptr)
+    {
+        jlong size;
+        if (env->IsInstanceOf(sizeObject, irMacroClazz))
+        {
+            auto* macroNameObject = reinterpret_cast<jstring>(env->GetObjectField(
+                sizeObject, env->GetFieldID(irMacroClazz, "name", "Ljava/lang/String;")));
+            auto* macroName = env->GetStringUTFChars(macroNameObject, nullptr);
+            if (strcmp(macroName, "structure_length") == 0)
+            {
+                auto* argsArray = reinterpret_cast<jobjectArray>(env->GetObjectField(
+                    sizeObject, env->GetFieldID(irMacroClazz, "args", "[Ljava/lang/String;")));
+                auto* structures = env->GetObjectField(irModule, env->GetFieldID(
+                                                           env->GetObjectClass(irModule), "structures",
+                                                           "Ljava/util/Map;"));
+                auto* structureNameObject = reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 0));
+                auto* structureName = env->GetStringUTFChars(structureNameObject, nullptr);
+                auto* structure = env->CallObjectMethod(
+                    structures, env->GetMethodID(env->GetObjectClass(structures), "get",
+                                                 "(Ljava/lang/Object;)Ljava/lang/Object;"),
+                    env->NewStringUTF(structureName));
+                size = env->CallLongMethod(structure, env->GetMethodID(
+                                               env->GetObjectClass(structure), "getLength",
+                                               "()J"));
+                env->ReleaseStringUTFChars(structureNameObject, structureName);
+            }
+            else
+            {
+                env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                              (std::string("Not expected macro ") + macroName).c_str());
+                return nullptr;
+            }
+            env->ReleaseStringUTFChars(macroNameObject, macroName);
+        }
+        else if (env->IsInstanceOf(sizeObject, irConstantClazz))
+        {
+            jint index = env->GetIntField(sizeObject, env->GetFieldID(irConstantClazz, "index", "I"));
+            auto* irModuleClazz = env->GetObjectClass(irModule);
+            auto* constantPool = env->GetObjectField(
+                irModule, env->GetFieldID(irModuleClazz, "constantPool", "Lldk/l/lg/ir/IRConstantPool;"));
+            auto* entry = env->CallObjectMethod(constantPool,
+                                                env->GetMethodID(env->GetObjectClass(constantPool), "get",
+                                                                 "(I)Lldk/l/lg/ir/IRConstantPool$Entry;"), index);
+            if (entry == nullptr)
+            {
+                env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                              "Not expected type of size");
+                return nullptr;
+            }
+            auto* entryClazz = env->GetObjectClass(entry);
+            auto* value = env->GetObjectField(entry, env->GetFieldID(entryClazz, "value", "Ljava/lang/Object;"));
+            auto* numberClazz = env->FindClass("Ljava/lang/Number;");
+            if (env->IsInstanceOf(value, numberClazz))
+            {
+                size = env->CallLongMethod(value, env->GetMethodID(numberClazz, "longValue", "()J"));
+            }
+            else
+            {
+                env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                              "Not expected type of size");
+                return nullptr;
+            }
+        }
+        else
+        {
+            env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                          "Not expected type of size");
+            return nullptr;
+        }
+        auto* globalVariable = new llvm::GlobalVariable(
+            *module, llvm::ArrayType::get(llvm::Type::getInt8Ty(*context), size), false,
+            llvm::GlobalValue::ExternalLinkage, nullptr, name);
+    }
+    else
+    {
+        auto* values = reinterpret_cast<jobjectArray>(env->GetObjectField(
+            irGlobalData, env->GetFieldID(globalDataClazz, "values", "[Lldk/l/lg/ir/operand/IROperand;")));
+        auto* irVirtualTableClazz = env->FindClass("ldk/l/lg/ir/operand/IRVirtualTable");
+        auto* irInterfaceTableClazz = env->FindClass("ldk/l/lg/ir/operand/IRInterfaceTable");
+        for (int i = 0; i < env->GetArrayLength(values); ++i)
+        {
+            auto* value = env->GetObjectArrayElement(values, i);
+            llvm::GlobalVariable* globalVariable;
+            if (env->IsInstanceOf(value, irConstantClazz))
+            {
+                jint index = env->GetIntField(sizeObject, env->GetFieldID(irConstantClazz, "index", "I"));
+                auto* irModuleClazz = env->GetObjectClass(irModule);
+                auto* constantPool = env->GetObjectField(
+                    irModule, env->GetFieldID(irModuleClazz, "constantPool", "Lldk/l/lg/ir/IRConstantPool;"));
+                auto* entry = env->CallObjectMethod(constantPool,
+                                                    env->GetMethodID(env->GetObjectClass(constantPool), "get",
+                                                                     "(I)Lldk/l/lg/ir/IRConstantPool$Entry;"), index);
+                if (entry == nullptr)
+                {
+                    env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                                  "Not expected type of size");
+                    return nullptr;
+                }
+                auto* entryClazz = env->GetObjectClass(entry);
+                auto* value = env->GetObjectField(entry, env->GetFieldID(entryClazz, "value", "Ljava/lang/Object;"));
+                auto* byteClazz = env->FindClass("java/lang/Byte");
+                auto* shortClazz = env->FindClass("java/lang/Short");
+                auto* intClazz = env->FindClass("java/lang/Integer");
+                auto* longClazz = env->FindClass("java/lang/Long");
+                if (env->IsInstanceOf(value, byteClazz))
+                {
+                    auto byteValue = env->CallByteMethod(value, env->GetMethodID(byteClazz, "byteValue", "()B"));
+                    globalVariable = new llvm::GlobalVariable(
+                        *module, llvm::Type::getInt8Ty(*context), false,
+                        llvm::GlobalValue::ExternalLinkage,
+                        llvm::ConstantInt::get(llvm::Type::getInt8Ty(*context), byteValue),
+                        name);
+                }
+                else if (env->IsInstanceOf(value, shortClazz))
+                {
+                    auto shortValue = env->CallShortMethod(value, env->GetMethodID(shortClazz, "shortValue", "()S"));
+                    globalVariable = new llvm::GlobalVariable(
+                        *module, llvm::Type::getInt16Ty(*context), false,
+                        llvm::GlobalValue::ExternalLinkage,
+                        llvm::ConstantInt::get(llvm::Type::getInt16Ty(*context), shortValue),
+                        name);
+                }
+                else if (env->IsInstanceOf(value, intClazz))
+                {
+                    auto intValue = env->CallIntMethod(value, env->GetMethodID(intClazz, "intValue", "()I"));
+                    globalVariable = new llvm::GlobalVariable(
+                        *module, llvm::Type::getInt32Ty(*context), false,
+                        llvm::GlobalValue::ExternalLinkage,
+                        llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), intValue),
+                        name);
+                }
+                else if (env->IsInstanceOf(value, longClazz))
+                {
+                    auto longValue = env->CallLongMethod(value, env->GetMethodID(longClazz, "longValue", "()J"));
+                    globalVariable = new llvm::GlobalVariable(
+                        *module, llvm::Type::getInt64Ty(*context), false,
+                        llvm::GlobalValue::ExternalLinkage,
+                        llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context), longValue),
+                        name);
+                }
+                else
+                {
+                    env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                                  "Not expected type of size");
+                    return nullptr;
+                }
+            }
+            else if (env->IsInstanceOf(value, irMacroClazz))
+            {
+                auto* macroNameObject = reinterpret_cast<jstring>(env->GetObjectField(
+                    sizeObject, env->GetFieldID(irMacroClazz, "name", "Ljava/lang/String;")));
+                auto* macroName = env->GetStringUTFChars(macroNameObject, nullptr);
+                if (strcmp(macroName, "structure_length") == 0)
+                {
+                    auto* argsArray = reinterpret_cast<jobjectArray>(env->GetObjectField(
+                        sizeObject, env->GetFieldID(irMacroClazz, "args", "[Ljava/lang/String;")));
+                    auto* structures = env->GetObjectField(irModule, env->GetFieldID(
+                                                               env->GetObjectClass(irModule), "structures",
+                                                               "Ljava/util/Map;"));
+                    auto* structureNameObject = reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 0));
+                    auto* structureName = env->GetStringUTFChars(structureNameObject, nullptr);
+                    auto* structure = env->CallObjectMethod(
+                        structures, env->GetMethodID(env->GetObjectClass(structures), "get",
+                                                     "(Ljava/lang/Object;)Ljava/lang/Object;"),
+                        env->NewStringUTF(structureName));
+                    long size = env->CallLongMethod(structure, env->GetMethodID(
+                                                        env->GetObjectClass(structure), "getLength",
+                                                        "()J"));
+                    env->ReleaseStringUTFChars(structureNameObject, structureName);
+                    globalVariable = new llvm::GlobalVariable(
+                        *module, llvm::Type::getInt64Ty(*context), false,
+                        llvm::GlobalValue::ExternalLinkage,
+                        llvm::ConstantInt::get(llvm::Type::getInt64Ty(*context), size),
+                        name);
+                }
+                else
+                {
+                    env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
+                                  (std::string("Not expected macro ") + macroName).c_str());
+                    return nullptr;
+                }
+                env->ReleaseStringUTFChars(macroNameObject, macroName);
+            }
+            else if (env->IsInstanceOf(value, irVirtualTableClazz))
+            {
+                auto* functions = reinterpret_cast<jobjectArray>(env->GetObjectField(
+                    sizeObject, env->GetFieldID(irVirtualTableClazz, "functions", "[Ljava/lang/String;")));
+                for (int j = 0; j < env->GetArrayLength(functions); ++j)
+                {
+                    auto* function = reinterpret_cast<jstring>(env->GetObjectArrayElement(functions, j));
+                    if (function == nullptr)
+                    {
+                        auto* type = llvm::PointerType::get(llvm::Type::getVoidTy(*context), 0);
+                        globalVariable = new llvm::GlobalVariable(
+                            *module, type, false,
+                            llvm::GlobalValue::ExternalLinkage,
+                            llvm::ConstantPointerNull::get(type),
+                            name);
+                    }
+                    auto* functionName = env->GetStringUTFChars(function, nullptr);
+                    auto* functionPtr = module->getFunction(functionName);
+                    globalVariable = new llvm::GlobalVariable(
+                        *module, functionPtr->getType(), false,
+                        llvm::GlobalValue::ExternalLinkage,
+                        functionPtr,
+                        name);
+                }
+            }
+            else if (env->IsInstanceOf(value, irInterfaceTableClazz))
+            {
+                auto* entries = reinterpret_cast<jobjectArray>(env->GetObjectField(
+                    value, env->GetFieldID(irInterfaceTableClazz, "entries",
+                                           "Lldk/l/lg/ir/operand/IRInterfaceTable$Entry;")));
+                std::vector<llvm::Constant*> globals;
+                for (int j = 0; j < env->GetArrayLength(entries); ++j)
+                {
+                    auto* entry = env->GetObjectArrayElement(entries, j);
+                    // TODO
+                }
+            }
+        }
+    }
+
+    env->ReleaseStringUTFChars(nameObject, name);
+
+    return nullptr;
+}
+
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitFunction(
     JNIEnv* env, jobject thisPtr, jobject irFunction, jobject additional)
 {
@@ -239,6 +492,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
     auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
         thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+
     jclass irFunctionClazz = env->GetObjectClass(irFunction);
     const auto name = reinterpret_cast<jstring>(env->
         GetObjectField(irFunction, env->GetFieldID(irFunctionClazz, "name", "Ljava/lang/String;")));
@@ -1447,6 +1701,8 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     auto* stack = reinterpret_cast<std::stack<llvm::Value*>*>(env->GetLongField(
         thisPtr, env->GetFieldID(clazz, "stack", "J")));
 
+    auto* irModuleClazz = env->GetObjectClass(irModule);
+
     auto* irMacroClazz = env->GetObjectClass(irMacro);
     auto* nameObject = reinterpret_cast<jstring>(env->GetObjectField(
         irMacro, env->GetFieldID(irMacroClazz, "name", "Ljava/lang/String;")));
@@ -1470,7 +1726,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     }
     else if (strcmp(name, "structure_length") == 0)
     {
-        auto* structures = env->GetObjectField(irModule, env->GetFieldID(env->GetObjectClass(irModule), "structures",
+        auto* structures = env->GetObjectField(irModule, env->GetFieldID(irModuleClazz, "structures",
                                                                          "Ljava/util/Map;"));
         auto* structureName = env->GetStringUTFChars(
             reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 0)),
@@ -1484,7 +1740,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     }
     else if (strcmp(name, "structure_field_offset") == 0)
     {
-        auto* structures = env->GetObjectField(irModule, env->GetFieldID(env->GetObjectClass(irModule), "structures",
+        auto* structures = env->GetObjectField(irModule, env->GetFieldID(irModuleClazz, "structures",
                                                                          "Ljava/util/Map;"));
         auto* structureName = env->GetStringUTFChars(
             reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 0)),
@@ -1499,8 +1755,8 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
             nullptr);
         jlong length = 0;
         jlong offset = -1;
-        auto* irTypeClazz = env->FindClass("Lldk/l/lg/ir/type/IRType;");
-        auto* getLengthMethod = env->GetMethodID(irTypeClazz, "getLength", "(Lldk/l/lg/ir/type/IRType;)J");
+        auto* irTypeClazz = env->FindClass("ldk/l/lg/ir/type/IRType");
+        auto* getLengthMethod = env->GetStaticMethodID(irTypeClazz, "getLength", "(Lldk/l/lg/ir/type/IRType;)J");
         for (int i = 0; i < env->GetArrayLength(fields); i++)
         {
             auto* field = env->GetObjectArrayElement(fields, i);
@@ -1512,10 +1768,43 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
             {
                 offset = length;
             }
-            auto* type = reinterpret_cast<llvm::Type*>(env->GetLongField(
-                field, env->GetFieldID(env->GetObjectClass(field), "type", "Lldk/l/lg/ir/type/IRType;")));
+            auto* type = env->GetObjectField(
+                field, env->GetFieldID(env->GetObjectClass(field), "type", "Lldk/l/lg/ir/type/IRType;"));
             length += env->CallStaticLongMethod(irTypeClazz, getLengthMethod, type);
         }
+        stack->push(llvm::ConstantInt::get(*context, llvm::APInt(64, offset, false)));
+    }
+    else if (strcmp(name, "global_data_address") == 0)
+    {
+        auto* globalDataNameObject = reinterpret_cast<jstring>(env->GetObjectArrayElement(argsArray, 0));
+        auto* globalDataName = env->GetStringUTFChars(globalDataNameObject, nullptr);
+        stack->push(module->getGlobalVariable(globalDataName));
+        env->ReleaseStringUTFChars(globalDataNameObject, globalDataName);
+    }
+    else if (strcmp(name, "vtable_entry_offset") == 0)
+    {
+        auto* arg1 = env->GetObjectArrayElement(argsArray, 0);
+        auto* arg2 = env->GetObjectArrayElement(argsArray, 1);
+        auto* name2VTableKeys = env->GetObjectField(
+            irModule, env->GetFieldID(irModuleClazz, "name2VTableKeys", "Ljava/util/Map;"));
+        auto* mapClazz = env->FindClass("java/util/Map");
+        auto* getMethod = env->GetMethodID(mapClazz, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
+        auto* list = env->CallObjectMethod(name2VTableKeys, getMethod, arg1);
+        auto offset = env->CallIntMethod(
+            list, env->GetMethodID(env->GetObjectClass(list), "indexOf", "(Ljava/lang/Object;)I"), arg2) * 8L;
+        stack->push(llvm::ConstantInt::get(*context, llvm::APInt(64, offset, false)));
+    }
+    else if (strcmp(name, "itable_entry_offset") == 0)
+    {
+        auto* arg1 = env->GetObjectArrayElement(argsArray, 0);
+        auto* arg2 = env->GetObjectArrayElement(argsArray, 1);
+        auto* name2ITableKeys = env->GetObjectField(
+            irModule, env->GetFieldID(irModuleClazz, "name2ITableKeys", "Ljava/util/Map;"));
+        auto* mapClazz = env->FindClass("java/util/Map");
+        auto* getMethod = env->GetMethodID(mapClazz, "get", "(Ljava/lang/Object;)Ljava/lang/Object;");
+        auto* list = env->CallObjectMethod(name2ITableKeys, getMethod, arg1);
+        auto offset = env->CallIntMethod(
+            list, env->GetMethodID(env->GetObjectClass(list), "indexOf", "(Ljava/lang/Object;)I"), arg2) * 8L + 8;
         stack->push(llvm::ConstantInt::get(*context, llvm::APInt(64, offset, false)));
     }
     return nullptr;

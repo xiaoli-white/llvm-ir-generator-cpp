@@ -17,6 +17,14 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LL
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    visitGlobalData
+ * Signature: (Lldk/l/lg/ir/base/IRGlobalDataSection/GlobalData;Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitGlobalData
+  (JNIEnv *, jobject, jobject, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitFunction
  * Signature: (Lldk/l/lg/ir/base/IRFunction;Ljava/lang/Object;)Ljava/lang/Object;
  */
