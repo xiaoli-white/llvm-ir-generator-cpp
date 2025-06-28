@@ -9,6 +9,22 @@ extern "C" {
 #endif
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    initializeQueue
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeQueue
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    initializeITableInitializer
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeITableInitializer
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    createFunction
  * Signature: (Lldk/l/lg/ir/base/IRFunction;)V
  */

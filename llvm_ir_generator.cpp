@@ -12,6 +12,7 @@
 #include <iostream>
 #include <map>
 #include <stack>
+#include <queue>
 #include <llvm/IR/Argument.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetMachine.h>
@@ -201,6 +202,48 @@ llvm::Type* getType(JNIEnv* env, jobject irType, llvm::LLVMContext* context)
     return nullptr;
 }
 
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeQueue(
+    JNIEnv* env, jobject thisPtr)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* queue = new std::queue<std::pair<std::string, std::string>>();
+    env->SetLongField(thisPtr, env->GetFieldID(clazz, "queue", "J"), reinterpret_cast<jlong>(queue));
+}
+
+JNIEXPORT void JNICALL
+Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeITableInitializer(
+    JNIEnv* env, jobject thisPtr)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->
+        GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* queue = reinterpret_cast<std::queue<std::pair<std::string, std::string>>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "queue", "J")));
+
+    auto* function = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(*context), {}, false),
+                                            llvm::Function::ExternalLinkage, "itable_initializer", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(*context, "entry", function);
+    builder->SetInsertPoint(entry);
+    while (!queue->empty())
+    {
+        auto pair = queue->front();
+        queue->pop();
+        auto* entryVar = module->getGlobalVariable(pair.first);
+        auto* elementPtr = builder->CreateInBoundsGEP(
+            entryVar->getType(),
+            entryVar,
+            {
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0)
+            });
+        builder->CreateStore(module->getGlobalVariable(pair.second), elementPtr);
+    }
+}
+
 JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createFunction
 (JNIEnv* env, jobject thisPtr, jobject irFunction)
 {
@@ -339,7 +382,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
             llvm::GlobalVariable* globalVariable;
             if (env->IsInstanceOf(value, irConstantClazz))
             {
-                jint index = env->GetIntField(sizeObject, env->GetFieldID(irConstantClazz, "index", "I"));
+                jint index = env->GetIntField(value, env->GetFieldID(irConstantClazz, "index", "I"));
                 auto* irModuleClazz = env->GetObjectClass(irModule);
                 auto* constantPool = env->GetObjectField(
                     irModule, env->GetFieldID(irModuleClazz, "constantPool", "Lldk/l/lg/ir/IRConstantPool;"));
@@ -404,12 +447,12 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
             else if (env->IsInstanceOf(value, irMacroClazz))
             {
                 auto* macroNameObject = reinterpret_cast<jstring>(env->GetObjectField(
-                    sizeObject, env->GetFieldID(irMacroClazz, "name", "Ljava/lang/String;")));
+                    value, env->GetFieldID(irMacroClazz, "name", "Ljava/lang/String;")));
                 auto* macroName = env->GetStringUTFChars(macroNameObject, nullptr);
                 if (strcmp(macroName, "structure_length") == 0)
                 {
                     auto* argsArray = reinterpret_cast<jobjectArray>(env->GetObjectField(
-                        sizeObject, env->GetFieldID(irMacroClazz, "args", "[Ljava/lang/String;")));
+                        value, env->GetFieldID(irMacroClazz, "args", "[Ljava/lang/String;")));
                     auto* structures = env->GetObjectField(irModule, env->GetFieldID(
                                                                env->GetObjectClass(irModule), "structures",
                                                                "Ljava/util/Map;"));
@@ -440,39 +483,74 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
             else if (env->IsInstanceOf(value, irVirtualTableClazz))
             {
                 auto* functions = reinterpret_cast<jobjectArray>(env->GetObjectField(
-                    sizeObject, env->GetFieldID(irVirtualTableClazz, "functions", "[Ljava/lang/String;")));
+                    value, env->GetFieldID(irVirtualTableClazz, "functions", "[Ljava/lang/String;")));
+                std::vector<llvm::Constant*> globals;
                 for (int j = 0; j < env->GetArrayLength(functions); ++j)
                 {
                     auto* function = reinterpret_cast<jstring>(env->GetObjectArrayElement(functions, j));
-                    if (function == nullptr)
+                    auto* functionName = env->GetStringUTFChars(function, nullptr);
+                    if (*functionName == '\0')
                     {
                         auto* type = llvm::PointerType::get(llvm::Type::getVoidTy(*context), 0);
-                        globalVariable = new llvm::GlobalVariable(
-                            *module, type, false,
-                            llvm::GlobalValue::ExternalLinkage,
-                            llvm::ConstantPointerNull::get(type),
-                            name);
+                        globals.push_back(llvm::ConstantPointerNull::get(type));
+                        continue;
                     }
-                    auto* functionName = env->GetStringUTFChars(function, nullptr);
-                    auto* functionPtr = module->getFunction(functionName);
-                    globalVariable = new llvm::GlobalVariable(
-                        *module, functionPtr->getType(), false,
-                        llvm::GlobalValue::ExternalLinkage,
-                        functionPtr,
-                        name);
+                    globals.push_back(module->getFunction(functionName));
+                    env->ReleaseStringUTFChars(function, functionName);
                 }
+                auto* ty = llvm::ArrayType::get(llvm::PointerType::get(llvm::Type::getVoidTy(*context), 0),
+                                                globals.size());
+                globalVariable = new llvm::GlobalVariable(*module, ty, false, llvm::GlobalValue::ExternalLinkage,
+                                                          llvm::ConstantArray::get(ty, globals), name);
             }
             else if (env->IsInstanceOf(value, irInterfaceTableClazz))
             {
+                auto* queue = reinterpret_cast<std::queue<std::pair<std::string, std::string>>*>(env->GetLongField(
+                    thisPtr, env->GetFieldID(clazz, "queue", "J")));
                 auto* entries = reinterpret_cast<jobjectArray>(env->GetObjectField(
                     value, env->GetFieldID(irInterfaceTableClazz, "entries",
-                                           "Lldk/l/lg/ir/operand/IRInterfaceTable$Entry;")));
+                                           "[Lldk/l/lg/ir/operand/IRInterfaceTable$Entry;")));
                 std::vector<llvm::Constant*> globals;
                 for (int j = 0; j < env->GetArrayLength(entries); ++j)
                 {
                     auto* entry = env->GetObjectArrayElement(entries, j);
-                    // TODO
+                    auto* entryClazz = env->GetObjectClass(entry);
+                    auto* functions = reinterpret_cast<jobjectArray>(env->CallObjectMethod(
+                        entry, env->GetMethodID(entryClazz, "functions", "()[Ljava/lang/String;")));
+                    auto* entryNameObject = reinterpret_cast<jstring>(env->CallObjectMethod(
+                        entry, env->GetMethodID(entryClazz, "name", "()Ljava/lang/String;")));
+                    auto* entryName = env->GetStringUTFChars(entryNameObject, nullptr);
+
+                    std::string globalVarName = std::string(name) + "_entry_" + std::to_string(j);
+
+                    std::vector<llvm::Constant*> ptrs;
+                    auto* voidPtrType = llvm::PointerType::get(llvm::Type::getVoidTy(*context), 0);
+                    ptrs.push_back(llvm::ConstantPointerNull::get(voidPtrType));
+                    queue->emplace(globalVarName, std::string("<class_instance ") + entryName + ">");
+                    env->ReleaseStringUTFChars(entryNameObject, entryName);
+                    for (int k = 0; k < env->GetArrayLength(functions); ++k)
+                    {
+                        auto* function = reinterpret_cast<jstring>(env->GetObjectArrayElement(functions, k));
+                        auto* functionName = env->GetStringUTFChars(function, nullptr);
+                        if (*functionName == '\0')
+                        {
+                            ptrs.push_back(llvm::ConstantPointerNull::get(voidPtrType));
+                            continue;
+                        }
+                        ptrs.push_back(module->getFunction(functionName));
+                        env->ReleaseStringUTFChars(function, functionName);
+                    }
+                    auto* type = llvm::ArrayType::get(llvm::PointerType::get(llvm::Type::getVoidTy(*context), 0),
+                                                      ptrs.size());
+                    globals.push_back(new llvm::GlobalVariable(*module, voidPtrType, false,
+                                                               llvm::GlobalValue::ExternalLinkage,
+                                                               llvm::ConstantArray::get(type, ptrs),
+                                                               std::string(name) + "_entry_" + std::to_string(j)));
                 }
+                auto* ty = llvm::ArrayType::get(llvm::PointerType::get(llvm::Type::getVoidTy(*context), 0),
+                                                globals.size());
+                globalVariable = new llvm::GlobalVariable(*module, ty, false, llvm::GlobalValue::ExternalLinkage,
+                                                          llvm::ConstantArray::get(ty, globals), name);
             }
         }
     }
