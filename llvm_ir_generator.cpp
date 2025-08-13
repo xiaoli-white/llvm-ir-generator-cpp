@@ -805,9 +805,17 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visit
     if (stack->empty()) return nullptr;
     auto* operand1 = stack->top();
     stack->pop();
-    env->CallObjectMethod(thisPtr, visitMethod, operand2Object, additional);
-    if (stack->empty()) return nullptr;
-    auto* operand2 = stack->top();
+    llvm::Value* operand2;
+    if (operand2Object != nullptr)
+    {
+        env->CallObjectMethod(thisPtr, visitMethod, operand2Object, additional);
+        if (stack->empty()) return nullptr;
+        operand2 = stack->top();
+    }
+    else
+    {
+        operand2 = nullptr;
+    }
     stack->pop();
     auto* name = reinterpret_cast<jstring>(env->GetObjectField(
         irConditionalJump,
