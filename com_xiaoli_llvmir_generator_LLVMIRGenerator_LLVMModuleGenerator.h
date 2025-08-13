@@ -13,15 +13,16 @@ extern "C" {
  * Signature: ()V
  */
 JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeQueue
-  (JNIEnv *, jobject);
+(JNIEnv*, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    initializeITableInitializer
  * Signature: ()V
  */
-JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeITableInitializer
-  (JNIEnv *, jobject);
+JNIEXPORT void JNICALL
+Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeITableInitializer
+(JNIEnv*, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -29,7 +30,7 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LL
  * Signature: (Lldk/l/lg/ir/base/IRFunction;)V
  */
 JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createFunction
-  (JNIEnv *, jobject, jobject);
+(JNIEnv*, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -37,7 +38,7 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LL
  * Signature: (Lldk/l/lg/ir/base/IRGlobalDataSection/GlobalData;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitGlobalData
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -45,7 +46,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/base/IRFunction;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitFunction
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -53,7 +54,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRReturn;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitReturn
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -61,15 +62,16 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRGoto;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitGoto
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitConditionalJump
  * Signature: (Lldk/l/lg/ir/instruction/IRConditionalJump;Ljava/lang/Object;)Ljava/lang/Object;
  */
-JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitConditionalJump
-  (JNIEnv *, jobject, jobject, jobject);
+JNIEXPORT jobject JNICALL
+Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitConditionalJump
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -77,7 +79,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRCalculate;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitCalculate
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -85,7 +87,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRNot;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitNot
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -93,7 +95,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRNegate;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitNegate
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -101,7 +103,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRIncrease;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitIncrease
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -109,7 +111,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRDecrease;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitDecrease
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -117,7 +119,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRSet;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitSet
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -125,7 +127,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRGet;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitGet
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -133,7 +135,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRInvoke;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitInvoke
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -141,15 +143,16 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRStackAllocate;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitStackAllocate
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitSetVirtualRegister
  * Signature: (Lldk/l/lg/ir/instruction/IRSetVirtualRegister;Ljava/lang/Object;)Ljava/lang/Object;
  */
-JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitSetVirtualRegister
-  (JNIEnv *, jobject, jobject, jobject);
+JNIEXPORT jobject JNICALL
+Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitSetVirtualRegister
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -157,7 +160,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRAsm;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitAsm
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -165,7 +168,15 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRTypeCast;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitTypeCast
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
+
+/*
+* Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+* Method:    visitNoOperate
+* Signature: (Lldk/l/lg/ir/instruction/IRNoOperate;Ljava/lang/Object;)Ljava/lang/Object;
+*/
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitNoOperate
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -173,7 +184,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRMalloc;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitMalloc
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -181,7 +192,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRFree;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitFree
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -189,7 +200,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/instruction/IRRealloc;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitRealloc
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -197,7 +208,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/operand/IRPhi;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitPhi
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -205,15 +216,16 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/operand/IRConstant;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitConstant
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitVirtualRegister
  * Signature: (Lldk/l/lg/ir/operand/IRVirtualRegister;Ljava/lang/Object;)Ljava/lang/Object;
  */
-JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitVirtualRegister
-  (JNIEnv *, jobject, jobject, jobject);
+JNIEXPORT jobject JNICALL
+Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitVirtualRegister
+(JNIEnv*, jobject, jobject, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
@@ -221,7 +233,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
  * Signature: (Lldk/l/lg/ir/operand/IRMacro;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitMacro
-  (JNIEnv *, jobject, jobject, jobject);
+(JNIEnv*, jobject, jobject, jobject);
 
 #ifdef __cplusplus
 }

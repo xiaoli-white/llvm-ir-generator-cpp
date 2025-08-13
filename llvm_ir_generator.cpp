@@ -17,8 +17,8 @@
 #include <llvm/Target/TargetMachine.h>
 #include <llvm/Target/TargetOptions.h>
 #include <llvm/MC/TargetRegistry.h>
-#include <llvm/Support/FileSystem.h>
-#include <llvm/IR/LegacyPassManager.h>
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
 #include <llvm/Support/CodeGen.h>
 
 JNIEXPORT jlong JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_createLLVMContext(JNIEnv* env, jclass clazz)
@@ -82,23 +82,17 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
     JNIEnv* env, jclass clazz, jlong llvmModule, jobject options)
 {
     auto* module = reinterpret_cast<llvm::Module*>(llvmModule);
-
     auto* stringClazz = env->FindClass("java/lang/String");
-
+    auto* optionsClazz = env->GetObjectClass(options);
+    auto* getMethodID = env->GetMethodID(optionsClazz, "get",
+                                         "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;");
     auto* platformObject = reinterpret_cast<jstring>(env->CallObjectMethod(
-        options, env->GetMethodID(env->GetObjectClass(options), "get",
-                                  "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;"), "platform",
-        stringClazz));
+        options, getMethodID, env->NewStringUTF("platform"), stringClazz));
     auto* outputObject = reinterpret_cast<jstring>(env->CallObjectMethod(
-        options, env->GetMethodID(env->GetObjectClass(options), "get",
-                                  "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;"), "output",
-        stringClazz));
-
+        options, getMethodID, env->NewStringUTF("output"), stringClazz));
     auto* platform = env->GetStringUTFChars(platformObject, nullptr);
     auto* outputFilename = env->GetStringUTFChars(outputObject, nullptr);
-
     auto objFIleName = std::string(outputFilename) + ".o";
-
     LLVMInitializeX86TargetInfo();
     LLVMInitializeX86Target();
     LLVMInitializeX86TargetMC();
@@ -117,8 +111,16 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
     LLVMInitializeAArch64AsmParser();
     LLVMInitializeAArch64AsmPrinter();
 
-    module->setTargetTriple(platform);
+    std::error_code EC;
+    llvm::raw_fd_ostream out("output.module", EC);
+    if (EC)
+    {
+        llvm::errs() << "Error opening file: " << EC.message() << "\n";
+        return;
+    }
+    reinterpret_cast<llvm::Module*>(llvmModule)->print(out, nullptr);
 
+    module->setTargetTriple(platform);
     std::string error;
     auto* target = llvm::TargetRegistry::lookupTarget(platform, error);
     if (!target)
@@ -131,38 +133,23 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
     llvm::TargetOptions opt;
     auto* targetMachine = target->createTargetMachine(platform, cpu, features, opt, llvm::Reloc::Model::PIC_);
     module->setDataLayout(targetMachine->createDataLayout());
-    std::error_code ec;
-    llvm::raw_fd_ostream dest(objFIleName, ec, llvm::sys::fs::OF_None);
-    if (ec)
-    {
-        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), ec.message().c_str());
-        return;
-    }
-    llvm::legacy::PassManager pass;
-    auto fileType = llvm::CodeGenFileType::ObjectFile;
-
-    if (targetMachine->addPassesToEmitFile(pass, dest, nullptr, fileType))
-    {
-        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"),
-                      "TargetMachine can't emit a file of this type");
-        return;
-    }
-
-    pass.run(*module);
-    dest.flush();
-
+    llvm::PassBuilder pb;
+    llvm::ModuleAnalysisManager mam;
+    pb.registerModuleAnalyses(mam);
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    mpm.run(*module, mam);
     std::string linkCmd;
 #ifdef _WIN32
     linkCmd = "link " + objFIleName + " /OUT:" + outputFilename;
 #else
     linkCmd = "gcc " + objFileName + " -o " + outputFilename;
 #endif
-
+    std::cout << 1;
     if (system(linkCmd.c_str()))
     {
         env->ThrowNew(env->FindClass("java/lang/Exception"), "Linking failed");
     }
-
+    std::cout << 1;
     env->ReleaseStringUTFChars(platformObject, platform);
     env->ReleaseStringUTFChars(outputObject, outputFilename);
 }
@@ -240,8 +227,10 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initi
                 llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0),
                 llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0)
             });
-        builder->CreateStore(module->getGlobalVariable(pair.second), elementPtr);
+        auto* inst = builder->CreateStore(module->getGlobalVariable(pair.second), elementPtr);
+        inst->setAlignment(llvm::Align(1));
     }
+    builder->CreateRetVoid();
 }
 
 JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createFunction
@@ -543,7 +532,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
                     }
                     auto* type = llvm::ArrayType::get(llvm::PointerType::get(llvm::Type::getVoidTy(*context), 0),
                                                       ptrs.size());
-                    globals.push_back(new llvm::GlobalVariable(*module, voidPtrType, false,
+                    globals.push_back(new llvm::GlobalVariable(*module, type, false,
                                                                llvm::GlobalValue::ExternalLinkage,
                                                                llvm::ConstantArray::get(type, ptrs),
                                                                std::string(name) + "_entry_" + std::to_string(j)));
@@ -579,7 +568,8 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     const auto fields = reinterpret_cast<jobjectArray>(env->GetObjectField(
         irFunction, env->GetFieldID(irFunctionClazz, "fields", "[Lldk/l/lg/ir/structure/IRField;")));
 
-    auto* function = module->getFunction(env->GetStringUTFChars(name, nullptr));
+    auto* functionName = env->GetStringUTFChars(name, nullptr);
+    auto* function = module->getFunction(functionName);
     env->SetLongField(thisPtr, env->GetFieldID(clazz, "currentFunction", "J"), reinterpret_cast<jlong>(function));
 
     auto* stack = new std::stack<llvm::Value*>();
@@ -601,10 +591,15 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     for (i = 0; i < argumentCount; i++)
     {
         auto* field = env->GetObjectArrayElement(fields, i);
+        auto* irFieldClazz = env->GetObjectClass(field);
+        auto* fieldNameObject = reinterpret_cast<jstring>(env->GetObjectField(
+            field, env->GetFieldID(irFieldClazz, "name", "Ljava/lang/String;")));
+        auto* fieldName = env->GetStringUTFChars(fieldNameObject, nullptr);
         auto* inst = builder->CreateAlloca(getType(
-            env, env->GetObjectField(
-                field, env->GetFieldID(env->GetObjectClass(field), "type", "Lldk/l/lg/ir/type/IRType;")),
-            context));
+                                               env, env->GetObjectField(
+                                                   field, env->GetFieldID(
+                                                       irFieldClazz, "type", "Lldk/l/lg/ir/type/IRType;")),
+                                               context), nullptr, fieldName);
         inst->setAlignment(llvm::Align(1));
         auto* arg = function->getArg(i);
         builder->CreateStore(arg, inst);
@@ -614,14 +609,20 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
                                                       field, env->GetFieldID(
                                                           env->GetObjectClass(field), "name", "Ljava/lang/String;"))),
                                                   nullptr)), inst));
+        env->ReleaseStringUTFChars(fieldNameObject, fieldName);
     }
     for (; i < env->GetArrayLength(fields); i++)
     {
         auto* field = env->GetObjectArrayElement(fields, i);
+        auto* irFieldClazz = env->GetObjectClass(field);
+        auto* fieldNameObject = reinterpret_cast<jstring>(env->GetObjectField(
+            field, env->GetFieldID(irFieldClazz, "name", "Ljava/lang/String;")));
+        auto* fieldName = env->GetStringUTFChars(fieldNameObject, nullptr);
         auto* inst = builder->CreateAlloca(getType(
-            env, env->GetObjectField(
-                field, env->GetFieldID(env->GetObjectClass(field), "type", "Lldk/l/lg/ir/type/IRType;")),
-            context));
+                                               env, env->GetObjectField(
+                                                   field, env->GetFieldID(
+                                                       irFieldClazz, "type", "Lldk/l/lg/ir/type/IRType;")),
+                                               context), nullptr, fieldName);
         inst->setAlignment(llvm::Align(1));
 
         field2LocalVar->insert(std::make_pair(std::string(env->GetStringUTFChars(
@@ -629,6 +630,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
                                                       field, env->GetFieldID(
                                                           env->GetObjectClass(field), "name", "Ljava/lang/String;"))),
                                                   nullptr)), inst));
+        env->ReleaseStringUTFChars(fieldNameObject, fieldName);
     }
 
     int basicBlockCount = 0;
@@ -678,26 +680,41 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         auto* iterator2 = env->CallObjectMethod(
             instructions,
             env->GetMethodID(env->GetObjectClass(instructions), "iterator", "()Ljava/util/Iterator;"));
+        auto* isEmptyMethod = env->GetMethodID(env->GetObjectClass(instructions), "isEmpty", "()Z");
         jmethodID hasNextMethod2 = env->GetMethodID(env->GetObjectClass(iterator2), "hasNext", "()Z");
         jmethodID nextMethod2 = env->GetMethodID(env->GetObjectClass(iterator2), "next", "()Ljava/lang/Object;");
-        while (env->CallBooleanMethod(iterator2, hasNextMethod2))
+        if (env->CallBooleanMethod(instructions, isEmptyMethod))
         {
-            auto* instruction = env->CallObjectMethod(iterator2, nextMethod2);
-            env->CallObjectMethod(thisPtr, visitMethod, instruction, additional);
-            while (!stack->empty())stack->pop();
+            auto* doNothing = llvm::Intrinsic::getDeclaration(module, llvm::Intrinsic::donothing, {});
+            builder->CreateCall(doNothing, {});
         }
+        else
+        {
+            while (env->CallBooleanMethod(iterator2, hasNextMethod2))
+            {
+                auto* instruction = env->CallObjectMethod(iterator2, nextMethod2);
+                env->CallObjectMethod(thisPtr, visitMethod, instruction, additional);
+                while (!stack->empty())stack->pop();
+            }
+        }
+        env->ReleaseStringUTFChars(basicBlockName, cString);
     }
 
     for (auto it = function->begin(); it != function->end(); ++it)
     {
-        if (it != function->begin() && !it->hasNPredecessorsOrMore(1))
+        auto tmp = it;
+        ++tmp;
+        auto end = it->end();
+        --end;
+        if (tmp != function->end() && (it->empty() || (!llvm::isa<llvm::BranchInst>(end) && !llvm::isa<
+            llvm::ReturnInst>(end))))
         {
-            auto tmp = it;
-            --tmp;
-            builder->SetInsertPoint(&*tmp);
-            builder->CreateBr(&*it);
+            builder->SetInsertPoint(&*it);
+            builder->CreateBr(&*tmp);
         }
     }
+
+    env->ReleaseStringUTFChars(name, functionName);
 
     delete virtualRegister2Value;
     delete basicBlockMap;
@@ -750,6 +767,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         irGoto, env->GetFieldID(env->GetObjectClass(irGoto), "target", "Ljava/lang/String;")));
     auto* cString = env->GetStringUTFChars(name, nullptr);
     builder->CreateBr(basicBlockMap->at(cString));
+    env->ReleaseStringUTFChars(name, cString);
     return nullptr;
 }
 
@@ -801,81 +819,120 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visit
     else
     {
         llvm::Value* ret;
-        jclass irIntegerTypeClazz = env->FindClass("ldk/l/lg/ir/type/IRIntegerType");
-        if (env->IsInstanceOf(typeObject, irIntegerTypeClazz))
+        if (strcmp(text, "if_true") == 0 || strcmp(text, "if_false") == 0)
         {
-            jboolean isUnsigned = env->GetBooleanField(
-                typeObject, env->GetFieldID(env->GetObjectClass(typeObject), "isUnsigned", "Z"));
-            if (strcmp(text, "e") == 0)
-            {
-                ret = builder->CreateICmpEQ(operand1, operand2);
-            }
-            else if (strcmp(text, "ne") == 0)
-            {
-                ret = builder->CreateICmpNE(operand1, operand2);
-            }
-            else if (strcmp(text, "g") == 0)
-            {
-                if (isUnsigned)
-                    ret = builder->CreateICmpUGT(operand1, operand2);
-                else
-                    ret = builder->CreateICmpSGT(operand1, operand2);
-            }
-            else if (strcmp(text, "ge") == 0)
-            {
-                if (isUnsigned)
-                    ret = builder->CreateICmpUGE(operand1, operand2);
-                else
-                    ret = builder->CreateICmpSGE(operand1, operand2);
-            }
-            else if (strcmp(text, "l") == 0)
-            {
-                if (isUnsigned)
-                    ret = builder->CreateICmpULT(operand1, operand2);
-                else
-                    ret = builder->CreateICmpSLT(operand1, operand2);
-            }
-            else if (strcmp(text, "le") == 0)
-            {
-                if (isUnsigned)
-                    ret = builder->CreateICmpULE(operand1, operand2);
-                else
-                    ret = builder->CreateICmpSLE(operand1, operand2);
-            }
-            else
-            {
-                ret = nullptr;
-            }
+            ret = operand1;
         }
         else
         {
-            if (strcmp(text, "e") == 0)
+            jclass irIntegerTypeClazz = env->FindClass("ldk/l/lg/ir/type/IRIntegerType");
+            auto* irPointerTypeClazz = env->FindClass("ldk/l/lg/ir/type/IRPointerType");
+            if (env->IsInstanceOf(typeObject, irIntegerTypeClazz))
             {
-                ret = builder->CreateFCmpOEQ(operand1, operand2);
+                jboolean isUnsigned = env->GetBooleanField(
+                    typeObject, env->GetFieldID(env->GetObjectClass(typeObject), "unsigned", "Z"));
+                if (strcmp(text, "e") == 0)
+                {
+                    ret = builder->CreateICmpEQ(operand1, operand2);
+                }
+                else if (strcmp(text, "ne") == 0)
+                {
+                    ret = builder->CreateICmpNE(operand1, operand2);
+                }
+                else if (strcmp(text, "g") == 0)
+                {
+                    if (isUnsigned)
+                        ret = builder->CreateICmpUGT(operand1, operand2);
+                    else
+                        ret = builder->CreateICmpSGT(operand1, operand2);
+                }
+                else if (strcmp(text, "ge") == 0)
+                {
+                    if (isUnsigned)
+                        ret = builder->CreateICmpUGE(operand1, operand2);
+                    else
+                        ret = builder->CreateICmpSGE(operand1, operand2);
+                }
+                else if (strcmp(text, "l") == 0)
+                {
+                    if (isUnsigned)
+                        ret = builder->CreateICmpULT(operand1, operand2);
+                    else
+                        ret = builder->CreateICmpSLT(operand1, operand2);
+                }
+                else if (strcmp(text, "le") == 0)
+                {
+                    if (isUnsigned)
+                        ret = builder->CreateICmpULE(operand1, operand2);
+                    else
+                        ret = builder->CreateICmpSLE(operand1, operand2);
+                }
+                else
+                {
+                    ret = nullptr;
+                }
             }
-            else if (strcmp(text, "ne") == 0)
+            else if (env->IsInstanceOf(typeObject, irPointerTypeClazz))
             {
-                ret = builder->CreateFCmpUNE(operand1, operand2);
-            }
-            else if (strcmp(text, "g") == 0)
-            {
-                ret = builder->CreateFCmpOGT(operand1, operand2);
-            }
-            else if (strcmp(text, "ge") == 0)
-            {
-                ret = builder->CreateFCmpOGE(operand1, operand2);
-            }
-            else if (strcmp(text, "l") == 0)
-            {
-                ret = builder->CreateFCmpOLT(operand1, operand2);
-            }
-            else if (strcmp(text, "le") == 0)
-            {
-                ret = builder->CreateFCmpOLE(operand1, operand2);
+                if (strcmp(text, "e") == 0)
+                {
+                    ret = builder->CreateICmpEQ(operand1, operand2);
+                }
+                else if (strcmp(text, "ne") == 0)
+                {
+                    ret = builder->CreateICmpNE(operand1, operand2);
+                }
+                else if (strcmp(text, "g") == 0)
+                {
+                    ret = builder->CreateICmpUGT(operand1, operand2);
+                }
+                else if (strcmp(text, "ge") == 0)
+                {
+                    ret = builder->CreateICmpUGE(operand1, operand2);
+                }
+                else if (strcmp(text, "l") == 0)
+                {
+                    ret = builder->CreateICmpULT(operand1, operand2);
+                }
+                else if (strcmp(text, "le") == 0)
+                {
+                    ret = builder->CreateICmpULE(operand1, operand2);
+                }
+                else
+                {
+                    ret = nullptr;
+                }
             }
             else
             {
-                ret = nullptr;
+                if (strcmp(text, "e") == 0)
+                {
+                    ret = builder->CreateFCmpOEQ(operand1, operand2);
+                }
+                else if (strcmp(text, "ne") == 0)
+                {
+                    ret = builder->CreateFCmpUNE(operand1, operand2);
+                }
+                else if (strcmp(text, "g") == 0)
+                {
+                    ret = builder->CreateFCmpOGT(operand1, operand2);
+                }
+                else if (strcmp(text, "ge") == 0)
+                {
+                    ret = builder->CreateFCmpOGE(operand1, operand2);
+                }
+                else if (strcmp(text, "l") == 0)
+                {
+                    ret = builder->CreateFCmpOLT(operand1, operand2);
+                }
+                else if (strcmp(text, "le") == 0)
+                {
+                    ret = builder->CreateFCmpOLE(operand1, operand2);
+                }
+                else
+                {
+                    ret = nullptr;
+                }
             }
         }
         auto* currentBasicBlock = env->GetObjectField(
@@ -902,7 +959,14 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visit
         auto* nextBasicBlockNameObject = reinterpret_cast<jstring>(env->GetObjectField(
             nextBasicBlock, env->GetFieldID(env->GetObjectClass(nextBasicBlock), "name", "Ljava/lang/String;")));
         auto* nextBasicBlockName = env->GetStringUTFChars(nextBasicBlockNameObject, nullptr);
-        builder->CreateCondBr(ret, basicBlockMap->at(target), basicBlockMap->at(nextBasicBlockName));
+        if (strcmp(text, "if_false") == 0)
+        {
+            builder->CreateCondBr(ret, basicBlockMap->at(nextBasicBlockName), basicBlockMap->at(target));
+        }
+        else
+        {
+            builder->CreateCondBr(ret, basicBlockMap->at(target), basicBlockMap->at(nextBasicBlockName));
+        }
     }
     return nullptr;
 }
@@ -925,7 +989,8 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     auto* operatorObject = env->GetObjectField(
         irCalculate,
         env->GetFieldID(irCalculateClazz, "operator", "Lldk/l/lg/ir/instruction/IRCalculate$Operator;"));
-
+    auto* typeObject = env->GetObjectField(irCalculate,
+                                           env->GetFieldID(irCalculateClazz, "type", "Lldk/l/lg/ir/type/IRType;"));
     auto* operand1Object = env->GetObjectField(irCalculate,
                                                env->GetFieldID(irCalculateClazz, "operand1",
                                                                "Lldk/l/lg/ir/operand/IROperand;"));
@@ -947,6 +1012,8 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     if (stack->empty()) return nullptr;
     auto* operand2 = stack->top();
     stack->pop();
+
+    auto* irPointerTypeClazz = env->FindClass("ldk/l/lg/ir/type/IRPointerType");
     if (isAtomic)
     {
     }
@@ -954,9 +1021,28 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     {
         llvm::Value* result;
         if (strcmp(text, "add") == 0)
-            result = builder->CreateAdd(operand1, operand2);
+        {
+            if (env->IsInstanceOf(typeObject, irPointerTypeClazz))
+            {
+                result = builder->CreateGEP(getType(env, typeObject, context), operand1, operand2);
+            }
+            else
+            {
+                result = builder->CreateAdd(operand1, operand2);
+            }
+        }
         else if (strcmp(text, "sub") == 0)
-            result = builder->CreateSub(operand1, operand2);
+        {
+            if (env->IsInstanceOf(typeObject, irPointerTypeClazz))
+            {
+                auto* offset = builder->CreateSub(llvm::ConstantInt::get(operand2->getType(), 0), operand2);
+                result = builder->CreateGEP(getType(env, typeObject, context), operand1, offset);
+            }
+            else
+            {
+                result = builder->CreateSub(operand1, operand2);
+            }
+        }
         else if (strcmp(text, "mul") == 0)
             result = builder->CreateMul(operand1, operand2);
         else if (strcmp(text, "div") == 0)
@@ -1157,6 +1243,8 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
     auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
         thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->
+        GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
     auto* stack = reinterpret_cast<std::stack<llvm::Value*>*>(env->GetLongField(
         thisPtr, env->GetFieldID(clazz, "stack", "J")));
     auto* irSetClazz = env->GetObjectClass(irSet);
@@ -1485,6 +1573,10 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     {
         result = builder->CreateZExt(source, getType(env, targetType, context));
     }
+    else if (strcmp(name, "trunc") == 0)
+    {
+        result = builder->CreateTrunc(source, getType(env, targetType, context));
+    }
     else if (strcmp(name, "sext") == 0)
     {
         result = builder->CreateSExt(source, getType(env, targetType, context));
@@ -1501,10 +1593,29 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     {
         result = builder->CreateFPExt(source, getType(env, targetType, context));
     }
+    else if (strcmp(name, "ftrunc") == 0)
+    {
+        result = builder->CreateFPTrunc(source, getType(env, targetType, context));
+    }
     auto* targetRegisterName = reinterpret_cast<jstring>(env->GetObjectField(
         target, env->GetFieldID(env->GetObjectClass(target), "name", "Ljava/lang/String;")));
     virtualRegister2Value->insert(std::make_pair(env->GetStringUTFChars(targetRegisterName, nullptr), result));
 
+    return nullptr;
+}
+
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitNoOperate
+(JNIEnv* env, jobject thisPtr, jobject irNoOperate, jobject additional)
+{
+    jclass clazz = env->GetObjectClass(thisPtr);
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->
+        GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+    auto* doNothing = llvm::Intrinsic::getDeclaration(module, llvm::Intrinsic::donothing, {});
+    builder->CreateCall(doNothing, {});
     return nullptr;
 }
 
@@ -1725,7 +1836,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
             {
                 jlong longValue = env->CallLongMethod(value, env->GetMethodID(jNumberClazz, "longValue", "()J"));
                 jboolean isUnsigned = env->
-                    GetBooleanField(type, env->GetFieldID(irIntegerTypeClazz, "isUnsigned", "Z"));
+                    GetBooleanField(type, env->GetFieldID(irIntegerTypeClazz, "unsigned", "Z"));
                 stack->push(llvm::ConstantInt::get(*context, llvm::APInt(realSize, longValue, !isUnsigned)));
             }
         }
@@ -1742,15 +1853,17 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
         else if (env->IsInstanceOf(type, irPointerTypeClazz))
         {
             auto* jStringClazz = env->FindClass("java/lang/String");
-            if (env->IsInstanceOf(value, jStringClazz))
+            if (value == nullptr)
+            {
+                stack->push(llvm::ConstantPointerNull::get(llvm::PointerType::get(llvm::Type::getVoidTy(*context), 0)));
+            }
+            else if (env->IsInstanceOf(value, jStringClazz))
             {
                 // TODO implement string
             }
-            else
+            else if (env->IsInstanceOf(value, jNumberClazz))
             {
-                jlong longValue = value == nullptr
-                                      ? 0
-                                      : env->CallLongMethod(value, env->GetMethodID(jNumberClazz, "longValue", "()J"));
+                jlong longValue = env->CallLongMethod(value, env->GetMethodID(jNumberClazz, "longValue", "()J"));
                 stack->push(llvm::ConstantInt::get(*context, llvm::APInt(64, longValue, false)));
             }
         }
@@ -1851,11 +1964,11 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
                 irMacro, env->GetFieldID(irMacroClazz, "additionalOperands", "[Lldk/l/lg/ir/operand/IROperand;")));
             auto* visitMethod = env->GetMethodID(clazz, "visit",
                                                  "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
-            env->CallObjectMethod(clazz, visitMethod, env->GetObjectArrayElement(additionalOperandsArray, 0),
-                                  additional, nullptr);
+            env->CallObjectMethod(thisPtr, visitMethod, env->GetObjectArrayElement(additionalOperandsArray, 0),
+                                  additional);
             auto* object = stack->top();
             stack->pop();
-            auto* addr = builder->CreateAdd(object, builder->getInt64(offset));
+            auto* addr = builder->CreateGEP(object->getType(), object, builder->getInt64(offset));
             stack->push(addr);
         }
     }
