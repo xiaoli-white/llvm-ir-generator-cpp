@@ -204,6 +204,13 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+ * Method:    visitCompare
+ * Signature: (Lldk/l/lg/ir/instruction/IRCompare;Ljava/lang/Object;)Ljava/lang/Object;
+ */
+JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitCompare
+(JNIEnv*, jobject, jobject, jobject);
+/*
+ * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitPhi
  * Signature: (Lldk/l/lg/ir/operand/IRPhi;Ljava/lang/Object;)Ljava/lang/Object;
  */
