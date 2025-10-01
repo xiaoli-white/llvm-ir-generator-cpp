@@ -93,32 +93,32 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
     auto* platform = env->GetStringUTFChars(platformObject, nullptr);
     auto* outputFilename = env->GetStringUTFChars(outputObject, nullptr);
     auto objFIleName = std::string(outputFilename) + ".o";
-    LLVMInitializeX86TargetInfo();
-    LLVMInitializeX86Target();
-    LLVMInitializeX86TargetMC();
-    LLVMInitializeX86AsmParser();
-    LLVMInitializeX86AsmPrinter();
+    // LLVMInitializeX86TargetInfo();
+    // LLVMInitializeX86Target();
+    // LLVMInitializeX86TargetMC();
+    // LLVMInitializeX86AsmParser();
+    // LLVMInitializeX86AsmPrinter();
 
-    LLVMInitializeARMTargetInfo();
-    LLVMInitializeARMTarget();
-    LLVMInitializeARMTargetMC();
-    LLVMInitializeARMAsmParser();
-    LLVMInitializeARMAsmPrinter();
+    // LLVMInitializeARMTargetInfo();
+    // LLVMInitializeARMTarget();
+    // LLVMInitializeARMTargetMC();
+    // LLVMInitializeARMAsmParser();
+    // LLVMInitializeARMAsmPrinter();
 
-    LLVMInitializeAArch64TargetInfo();
-    LLVMInitializeAArch64Target();
-    LLVMInitializeAArch64TargetMC();
-    LLVMInitializeAArch64AsmParser();
-    LLVMInitializeAArch64AsmPrinter();
+    // LLVMInitializeAArch64TargetInfo();
+    // LLVMInitializeAArch64Target();
+    // LLVMInitializeAArch64TargetMC();
+    // LLVMInitializeAArch64AsmParser();
+    // LLVMInitializeAArch64AsmPrinter();
 
     std::error_code EC;
-    llvm::raw_fd_ostream out("output.module", EC);
+    llvm::raw_fd_ostream out("output.ll", EC);
     if (EC)
     {
         llvm::errs() << "Error opening file: " << EC.message() << "\n";
         return;
     }
-    reinterpret_cast<llvm::Module*>(llvmModule)->print(out, nullptr);
+    module->print(out, nullptr);
 
     module->setTargetTriple(platform);
     std::string error;
@@ -133,10 +133,25 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
     llvm::TargetOptions opt;
     auto* targetMachine = target->createTargetMachine(platform, cpu, features, opt, llvm::Reloc::Model::PIC_);
     module->setDataLayout(targetMachine->createDataLayout());
-    llvm::PassBuilder pb;
+    // llvm::PassBuilder pb;
+    // llvm::ModuleAnalysisManager mam;
+    // pb.registerModuleAnalyses(mam);
+    // llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    // mpm.run(*module, mam);
     llvm::ModuleAnalysisManager mam;
+
+    llvm::PassBuilder pb(targetMachine);
+
+    // 注册分析
     pb.registerModuleAnalyses(mam);
-    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+
+    // 构建代码生成管道
+    llvm::CodeGenFileType ft = llvm::CodeGenFileType::ObjectFile;
+    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O2, true);
+
+    // 添加对象文件发射pass
+    // 注意：这里需要根据你的LLVM版本调整
+
     mpm.run(*module, mam);
     std::string linkCmd;
 #ifdef _WIN32
@@ -144,12 +159,12 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
 #else
     linkCmd = "gcc " + objFileName + " -o " + outputFilename;
 #endif
-    std::cout << 1;
+    std::cout << 1 << std::endl;
     if (system(linkCmd.c_str()))
     {
         env->ThrowNew(env->FindClass("java/lang/Exception"), "Linking failed");
     }
-    std::cout << 1;
+    std::cout << 1 << std::endl;
     env->ReleaseStringUTFChars(platformObject, platform);
     env->ReleaseStringUTFChars(outputObject, outputFilename);
 }
@@ -189,50 +204,6 @@ llvm::Type* getType(JNIEnv* env, jobject irType, llvm::LLVMContext* context)
     return nullptr;
 }
 
-JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeQueue(
-    JNIEnv* env, jobject thisPtr)
-{
-    auto* clazz = env->GetObjectClass(thisPtr);
-    auto* queue = new std::queue<std::pair<std::string, std::string>>();
-    env->SetLongField(thisPtr, env->GetFieldID(clazz, "queue", "J"), reinterpret_cast<jlong>(queue));
-}
-
-JNIEXPORT void JNICALL
-Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeITableInitializer(
-    JNIEnv* env, jobject thisPtr)
-{
-    auto* clazz = env->GetObjectClass(thisPtr);
-    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
-        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
-    auto* module = reinterpret_cast<llvm::Module*>(env->
-        GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
-    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
-        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
-    auto* queue = reinterpret_cast<std::queue<std::pair<std::string, std::string>>*>(env->GetLongField(
-        thisPtr, env->GetFieldID(clazz, "queue", "J")));
-
-    auto* function = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(*context), {}, false),
-                                            llvm::Function::ExternalLinkage, "itable_initializer", module);
-    llvm::BasicBlock* entry = llvm::BasicBlock::Create(*context, "entry", function);
-    builder->SetInsertPoint(entry);
-    while (!queue->empty())
-    {
-        auto pair = queue->front();
-        queue->pop();
-        auto* entryVar = module->getGlobalVariable(pair.first);
-        auto* elementPtr = builder->CreateInBoundsGEP(
-            entryVar->getType(),
-            entryVar,
-            {
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0),
-                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0)
-            });
-        auto* inst = builder->CreateStore(module->getGlobalVariable(pair.second), elementPtr);
-        inst->setAlignment(llvm::Align(1));
-    }
-    builder->CreateRetVoid();
-}
-
 JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createFunction
 (JNIEnv* env, jobject thisPtr, jobject irFunction)
 {
@@ -264,6 +235,88 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LL
     llvm::FunctionType* functionType = llvm::FunctionType::get(returnType, types, false);
     llvm::Function::Create(functionType, llvm::Function::ExternalLinkage,
                            env->GetStringUTFChars(name, nullptr), module);
+}
+
+
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeQueue(
+    JNIEnv* env, jobject thisPtr)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* queue = new std::queue<std::pair<std::string, std::string>>();
+    env->SetLongField(thisPtr, env->GetFieldID(clazz, "queue", "J"), reinterpret_cast<jlong>(queue));
+}
+
+JNIEXPORT void JNICALL
+Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeITableInitializer(
+    JNIEnv* env, jobject thisPtr)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->
+        GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* queue = reinterpret_cast<std::queue<std::pair<std::string, std::string>>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "queue", "J")));
+
+    auto* function = llvm::Function::Create(llvm::FunctionType::get(llvm::Type::getVoidTy(*context), {}, false),
+                                            llvm::Function::ExternalLinkage, "<itableInitializer>", module);
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(*context, "entry", function);
+    builder->SetInsertPoint(entry);
+    while (!queue->empty())
+    {
+        auto pair = queue->front();
+        queue->pop();
+        auto* entryVar = module->getGlobalVariable(pair.first);
+        auto* elementPtr = builder->CreateInBoundsGEP(
+            entryVar->getType(),
+            entryVar,
+            {
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0),
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0)
+            });
+        auto* inst = builder->CreateStore(module->getGlobalVariable(pair.second), elementPtr);
+        inst->setAlignment(llvm::Align(1));
+    }
+    builder->CreateRetVoid();
+}
+
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createMain
+(JNIEnv* env, jobject thisPtr)
+{
+    auto* clazz = env->GetObjectClass(thisPtr);
+    auto* irModule = env->GetObjectField(
+        thisPtr, env->GetFieldID(clazz, "module", "Lldk/l/lg/ir/IRModule;"));
+    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
+    auto* module = reinterpret_cast<llvm::Module*>(env->
+        GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
+    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
+        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
+    auto* irModuleClazz = env->GetObjectClass(irModule);
+    auto* entryPointObject = reinterpret_cast<jstring>(env->GetObjectField(
+        irModule, env->GetFieldID(irModuleClazz, "entryPoint", "Ljava/lang/String;")));
+    if (entryPointObject == nullptr)
+    {
+        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "No entry point");
+        return;
+    }
+    llvm::FunctionType* functionType = llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*context), {}, false);
+    auto* function = llvm::Function::Create(functionType, llvm::Function::ExternalLinkage, "main", module);
+
+    llvm::BasicBlock* entry = llvm::BasicBlock::Create(*context, "entry", function);
+    builder->SetInsertPoint(entry);
+    auto* entryPoint = env->GetStringUTFChars(entryPointObject, nullptr);
+    builder->CreateCall(module->getFunction("<itableInitializer>"), {});
+    auto* entryPointFunction = module->getFunction(entryPoint);
+    builder->CreateCall(entryPointFunction, {
+                            llvm::ConstantPointerNull::get(
+                                reinterpret_cast<llvm::PointerType*>(entryPointFunction->getFunctionType()->
+                                    getParamType(0)))
+                        });
+    builder->CreateRet(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0));
+    env->ReleaseStringUTFChars(entryPointObject, entryPoint);
 }
 
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitGlobalData(
@@ -356,9 +409,10 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
                           "Not expected type of size");
             return nullptr;
         }
+        auto* type = llvm::ArrayType::get(llvm::Type::getInt8Ty(*context), size);
         auto* globalVariable = new llvm::GlobalVariable(
-            *module, llvm::ArrayType::get(llvm::Type::getInt8Ty(*context), size), false,
-            llvm::GlobalValue::ExternalLinkage, nullptr, name);
+            *module, type, false,
+            llvm::GlobalValue::ExternalLinkage, llvm::ConstantAggregateZero::get(type), name);
     }
     else
     {
@@ -694,7 +748,7 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
             {
                 auto* instruction = env->CallObjectMethod(iterator2, nextMethod2);
                 env->CallObjectMethod(thisPtr, visitMethod, instruction, additional);
-                while (!stack->empty())stack->pop();
+                while (!stack->empty()) stack->pop();
             }
         }
         env->ReleaseStringUTFChars(basicBlockName, cString);
@@ -811,12 +865,12 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visit
         env->CallObjectMethod(thisPtr, visitMethod, operand2Object, additional);
         if (stack->empty()) return nullptr;
         operand2 = stack->top();
+        stack->pop();
     }
     else
     {
         operand2 = nullptr;
     }
-    stack->pop();
     auto* name = reinterpret_cast<jstring>(env->GetObjectField(
         irConditionalJump,
         env->GetFieldID(env->GetObjectClass(irConditionalJump), "target", "Ljava/lang/String;")));
@@ -827,7 +881,7 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visit
     else
     {
         llvm::Value* ret;
-        if (strcmp(text, "if_true") == 0 || strcmp(text, "if_false") == 0)
+        if ((strcmp(text, "if_true") == 0) || (strcmp(text, "if_false") == 0))
         {
             ret = operand1;
         }

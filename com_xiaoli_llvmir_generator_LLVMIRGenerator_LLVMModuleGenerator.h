@@ -9,9 +9,17 @@ extern "C" {
 #endif
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
- * Method:    initializeQueue
- * Signature: ()V
+ * Method:    createFunction
+ * Signature: (Lldk/l/lg/ir/base/IRFunction;)V
  */
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createFunction
+(JNIEnv*, jobject, jobject);
+
+/*
+* Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
+* Method:    initializeQueue
+* Signature: ()V
+*/
 JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initializeQueue
 (JNIEnv*, jobject);
 
@@ -26,11 +34,11 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initi
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
- * Method:    createFunction
- * Signature: (Lldk/l/lg/ir/base/IRFunction;)V
+ * Method:    createMain
+ * Signature: ()V
  */
-JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createFunction
-(JNIEnv*, jobject, jobject);
+JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createMain
+(JNIEnv*, jobject);
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
