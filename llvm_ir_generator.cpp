@@ -1,6 +1,28 @@
+#include <fstream>
 #include <jni.h>
 #include "./com_xiaoli_llvmir_generator_LLVMIRGenerator.h"
 #include "./com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator.h"
+
+
+#include <iostream>
+#include <map>
+#include <stack>
+#include <queue>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Path.h>
+#include <llvm/Support/Program.h>
+#include <llvm/Support/WithColor.h>
+
+#include "clang/Driver/Driver.h"
+#include "clang/Driver/Compilation.h"
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticOptions.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/MC/TargetRegistry.h>
+#include "llvm/IR/PassManager.h"
+#include "llvm/Passes/PassBuilder.h"
 #include <llvm/IR/Module.h>
 #include <llvm/IR/LLVMContext.h>
 #include "llvm/IR/GlobalVariable.h"
@@ -8,18 +30,15 @@
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/InlineAsm.h>
 #include <llvm/Support/raw_ostream.h>
+#include <clang/Basic/DiagnosticIDs.h>
+#include <llvm/Support/VirtualFileSystem.h>
 
-#include <iostream>
-#include <map>
-#include <stack>
-#include <queue>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Target/TargetMachine.h>
-#include <llvm/Target/TargetOptions.h>
-#include <llvm/MC/TargetRegistry.h>
-#include "llvm/IR/PassManager.h"
-#include "llvm/Passes/PassBuilder.h"
-#include <llvm/Support/CodeGen.h>
+static void ThrowJava(JNIEnv* env, const char* clazz, const std::string& msg)
+{
+    jclass c = env->FindClass(clazz);
+    if (!c) c = env->FindClass("java/lang/RuntimeException");
+    env->ThrowNew(c, msg.c_str());
+}
 
 JNIEXPORT jlong JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_createLLVMContext(JNIEnv* env, jclass clazz)
 {
@@ -82,91 +101,136 @@ JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_compile
     JNIEnv* env, jclass clazz, jlong llvmModule, jobject options)
 {
     auto* module = reinterpret_cast<llvm::Module*>(llvmModule);
-    auto* stringClazz = env->FindClass("java/lang/String");
-    auto* optionsClazz = env->GetObjectClass(options);
-    auto* getMethodID = env->GetMethodID(optionsClazz, "get",
-                                         "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;");
-    auto* platformObject = reinterpret_cast<jstring>(env->CallObjectMethod(
-        options, getMethodID, env->NewStringUTF("platform"), stringClazz));
-    auto* outputObject = reinterpret_cast<jstring>(env->CallObjectMethod(
-        options, getMethodID, env->NewStringUTF("output"), stringClazz));
-    auto* platform = env->GetStringUTFChars(platformObject, nullptr);
-    auto* outputFilename = env->GetStringUTFChars(outputObject, nullptr);
-    auto objFIleName = std::string(outputFilename) + ".o";
-    // LLVMInitializeX86TargetInfo();
-    // LLVMInitializeX86Target();
-    // LLVMInitializeX86TargetMC();
-    // LLVMInitializeX86AsmParser();
-    // LLVMInitializeX86AsmPrinter();
-
-    // LLVMInitializeARMTargetInfo();
-    // LLVMInitializeARMTarget();
-    // LLVMInitializeARMTargetMC();
-    // LLVMInitializeARMAsmParser();
-    // LLVMInitializeARMAsmPrinter();
-
-    // LLVMInitializeAArch64TargetInfo();
-    // LLVMInitializeAArch64Target();
-    // LLVMInitializeAArch64TargetMC();
-    // LLVMInitializeAArch64AsmParser();
-    // LLVMInitializeAArch64AsmPrinter();
-
-    std::error_code EC;
-    llvm::raw_fd_ostream out("output.ll", EC);
-    if (EC)
+    if (!module)
     {
-        llvm::errs() << "Error opening file: " << EC.message() << "\n";
+        ThrowJava(env, "java/lang/NullPointerException", "llvmModule is null");
         return;
     }
-    module->print(out, nullptr);
+
+    jclass optionsClazz = env->GetObjectClass(options);
+    if (!optionsClazz)
+    {
+        ThrowJava(env, "java/lang/NullPointerException", "options is null");
+        return;
+    }
+
+    jclass stringClazz = env->FindClass("java/lang/String");
+    if (!stringClazz)
+    {
+        if (env->ExceptionCheck()) return;
+        ThrowJava(env, "java/lang/ClassNotFoundException", "java/lang/String");
+        return;
+    }
+
+    jmethodID getMethodID = env->GetMethodID(optionsClazz, "get",
+                                             "(Ljava/lang/String;Ljava/lang/Class;)Ljava/lang/Object;");
+    if (!getMethodID)
+    {
+        ThrowJava(env, "java/lang/NoSuchMethodError", "options.get(String, Class) not found");
+        return;
+    }
+
+    jstring kPlatform = env->NewStringUTF("platform");
+    jstring kOutput = env->NewStringUTF("output");
+    if (!kPlatform || !kOutput)
+    {
+        ThrowJava(env, "java/lang/OutOfMemoryError", "NewStringUTF failed");
+        return;
+    }
+
+    jobject platformObj = env->CallObjectMethod(options, getMethodID, kPlatform, stringClazz);
+    if (env->ExceptionCheck()) return;
+    jobject outputObj = env->CallObjectMethod(options, getMethodID, kOutput, stringClazz);
+    if (env->ExceptionCheck()) return;
+
+    if (!platformObj || !outputObj)
+    {
+        ThrowJava(env, "java/lang/IllegalArgumentException", "platform/output not provided");
+        return;
+    }
+
+    auto platformJ = reinterpret_cast<jstring>(platformObj);
+    auto outputJ = reinterpret_cast<jstring>(outputObj);
+
+    const char* platform = env->GetStringUTFChars(platformJ, nullptr);
+    const char* outputFilename = env->GetStringUTFChars(outputJ, nullptr);
+    if (!platform || !outputFilename)
+    {
+        ThrowJava(env, "java/lang/OutOfMemoryError", "GetStringUTFChars failed");
+        return;
+    }
+
+    std::string tmpFile = std::string(outputFilename) + ".ll";
 
     module->setTargetTriple(platform);
-    std::string error;
-    auto* target = llvm::TargetRegistry::lookupTarget(platform, error);
-    if (!target)
+    if (outputFilename != nullptr)
     {
-        env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), error.c_str());
+        std::ofstream stream(outputFilename);
+        if (!stream)
+        {
+            ThrowJava(env, "java/lang/RuntimeException", std::string("Failed to create file: ") + outputFilename);
+            return;
+        }
+    }
+
+    std::error_code EC;
+    llvm::raw_fd_ostream Out(tmpFile, EC);
+    if (EC)
+    {
+        ThrowJava(env, "java/lang/RuntimeException", std::string("Failed to open file: ") + EC.message());
         return;
     }
-    auto* cpu = "generic";
-    auto* features = "";
-    llvm::TargetOptions opt;
-    auto* targetMachine = target->createTargetMachine(platform, cpu, features, opt, llvm::Reloc::Model::PIC_);
-    module->setDataLayout(targetMachine->createDataLayout());
-    // llvm::PassBuilder pb;
-    // llvm::ModuleAnalysisManager mam;
-    // pb.registerModuleAnalyses(mam);
-    // llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
-    // mpm.run(*module, mam);
-    llvm::ModuleAnalysisManager mam;
+    module->print(Out, nullptr);
+    Out.flush();
 
-    llvm::PassBuilder pb(targetMachine);
+    const auto DiagOpts = llvm::makeIntrusiveRefCnt<clang::DiagnosticOptions>();
+    auto* DiagClient = new clang::TextDiagnosticPrinter(llvm::errs(), &*DiagOpts);
+    const auto Diags = llvm::makeIntrusiveRefCnt<clang::DiagnosticsEngine>(
+        llvm::makeIntrusiveRefCnt<clang::DiagnosticIDs>(), &*DiagOpts, DiagClient);
 
-    // 注册分析
-    pb.registerModuleAnalyses(mam);
-
-    // 构建代码生成管道
-    llvm::CodeGenFileType ft = llvm::CodeGenFileType::ObjectFile;
-    llvm::ModulePassManager mpm = pb.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O2, true);
-
-    // 添加对象文件发射pass
-    // 注意：这里需要根据你的LLVM版本调整
-
-    mpm.run(*module, mam);
-    std::string linkCmd;
-#ifdef _WIN32
-    linkCmd = "link " + objFIleName + " /OUT:" + outputFilename;
-#else
-    linkCmd = "gcc " + objFileName + " -o " + outputFilename;
-#endif
-    std::cout << 1 << std::endl;
-    if (system(linkCmd.c_str()))
+    std::string ClangPath = "clang";
+    llvm::ErrorOr<std::string> ClangPathOrErr = llvm::sys::findProgramByName("clang");
+    if (ClangPathOrErr)
     {
-        env->ThrowNew(env->FindClass("java/lang/Exception"), "Linking failed");
+        ClangPath = ClangPathOrErr.get();
     }
-    std::cout << 1 << std::endl;
-    env->ReleaseStringUTFChars(platformObject, platform);
-    env->ReleaseStringUTFChars(outputObject, outputFilename);
+
+    clang::driver::Driver Driver(ClangPath, platform, *Diags);
+
+    std::vector<std::string> args = {ClangPath, "-x", "ir", tmpFile};
+
+    auto addArgIf = [&args](const bool condition, const std::string& flag, const std::string& value = "")
+    {
+        if (condition)
+        {
+            args.emplace_back(flag);
+            if (!value.empty())
+            {
+                args.emplace_back(value);
+            }
+        }
+    };
+
+    addArgIf(outputFilename != nullptr, "-o", outputFilename);
+
+    std::vector<const char*> argsText;
+    for (const auto& arg : args)
+    {
+        argsText.push_back(arg.c_str());
+    }
+    argsText.push_back(nullptr);
+
+    const auto C = Driver.BuildCompilation(argsText);
+    llvm::SmallVector<std::pair<int, const clang::driver::Command*>, 4> Failing;
+    C->ExecuteJobs(C->getJobs(), Failing);
+
+    if (llvm::sys::fs::exists(tmpFile))
+    {
+        if (std::error_code ec = llvm::sys::fs::remove(tmpFile))
+        {
+            llvm::errs() << "Failed to remove file: " << ec.message() << "\n";
+        }
+    }
 }
 
 llvm::Type* getType(JNIEnv* env, jobject irType, llvm::LLVMContext* context)
