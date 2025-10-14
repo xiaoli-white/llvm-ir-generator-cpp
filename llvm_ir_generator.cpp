@@ -344,43 +344,18 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initi
         inst->setAlignment(llvm::Align(1));
     }
     builder->CreateRetVoid();
-}
-
-JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createMain
-(JNIEnv* env, jobject thisPtr)
-{
-    auto* clazz = env->GetObjectClass(thisPtr);
-    auto* irModule = env->GetObjectField(
-        thisPtr, env->GetFieldID(clazz, "module", "Lldk/l/lg/ir/IRModule;"));
-    auto* context = reinterpret_cast<llvm::LLVMContext*>(env->GetLongField(
-        thisPtr, env->GetFieldID(clazz, "llvmContext", "J")));
-    auto* module = reinterpret_cast<llvm::Module*>(env->
-        GetLongField(thisPtr, env->GetFieldID(clazz, "llvmModule", "J")));
-    auto* builder = reinterpret_cast<llvm::IRBuilder<>*>(env->GetLongField(
-        thisPtr, env->GetFieldID(clazz, "llvmBuilder", "J")));
-    auto* irModuleClazz = env->GetObjectClass(irModule);
-    auto* entryPointObject = reinterpret_cast<jstring>(env->GetObjectField(
-        irModule, env->GetFieldID(irModuleClazz, "entryPoint", "Ljava/lang/String;")));
-    if (entryPointObject == nullptr)
-    {
-        env->ThrowNew(env->FindClass("java/lang/RuntimeException"), "No entry point");
-        return;
-    }
-    llvm::FunctionType* functionType = llvm::FunctionType::get(llvm::IntegerType::getInt32Ty(*context), {}, false);
-    auto* function = llvm::Function::Create(functionType, llvm::Function::ExternalLinkage, "main", module);
-
-    llvm::BasicBlock* entry = llvm::BasicBlock::Create(*context, "entry", function);
-    builder->SetInsertPoint(entry);
-    auto* entryPoint = env->GetStringUTFChars(entryPointObject, nullptr);
-    builder->CreateCall(module->getFunction("<itableInitializer>"), {});
-    auto* entryPointFunction = module->getFunction(entryPoint);
-    builder->CreateCall(entryPointFunction, {
-                            llvm::ConstantPointerNull::get(
-                                reinterpret_cast<llvm::PointerType*>(entryPointFunction->getFunctionType()->
-                                    getParamType(0)))
-                        });
-    builder->CreateRet(llvm::ConstantInt::get(llvm::Type::getInt32Ty(*context), 0));
-    env->ReleaseStringUTFChars(entryPointObject, entryPoint);
+    auto* ctorArrayType = llvm::ArrayType::get(llvm::PointerType::get(llvm::IntegerType::getInt8Ty(*context), 0), 2);
+    std::vector<llvm::Constant*> ctors;
+    ctors.push_back(
+        llvm::ConstantExpr::getBitCast(function, llvm::PointerType::get(llvm::IntegerType::getInt8Ty(*context), 0)));
+    ctors.push_back(llvm::ConstantPointerNull::get(llvm::PointerType::get(llvm::IntegerType::getInt8Ty(*context), 0)));
+    auto* ctorArrayInit = llvm::ConstantArray::get(ctorArrayType, ctors);
+    auto* ctorsGV = new llvm::GlobalVariable(*module,
+                                             ctorArrayType,
+                                             false,
+                                             llvm::GlobalValue::AppendingLinkage,
+                                             ctorArrayInit,
+                                             "llvm.global_ctors");
 }
 
 JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_visitGlobalData(
@@ -1300,13 +1275,17 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     auto* operand = stack->top();
     stack->pop();
 
+    auto* type = getType(env, typeObject, context);
     if (targetRegister == nullptr)
     {
         // atomic
+        // temporary solution
+        auto* value = builder->CreateLoad(type, operand);
+        auto* result = builder->CreateAdd(value, llvm::ConstantInt::get(type, 1));
+        builder->CreateStore(result, operand);
     }
     else
     {
-        auto* type = getType(env, typeObject, context);
         auto* result = builder->CreateAdd(operand, llvm::ConstantInt::get(type, 1));
         auto* target = reinterpret_cast<jstring>(env->GetObjectField(
             targetRegister, env->GetFieldID(env->GetObjectClass(targetRegister), "name", "Ljava/lang/String;")));
@@ -1344,13 +1323,17 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     auto* operand = stack->top();
     stack->pop();
 
+    auto* type = getType(env, typeObject, context);
     if (targetRegister == nullptr)
     {
         // atomic
+        // temporary solution
+        auto* value = builder->CreateLoad(type, operand);
+        auto* result = builder->CreateSub(value, llvm::ConstantInt::get(type, 1));
+        builder->CreateStore(result, operand);
     }
     else
     {
-        auto* type = getType(env, typeObject, context);
         auto* result = builder->CreateSub(operand, llvm::ConstantInt::get(type, 1));
         auto* target = reinterpret_cast<jstring>(env->GetObjectField(
             targetRegister, env->GetFieldID(env->GetObjectClass(targetRegister), "name", "Ljava/lang/String;")));

@@ -34,14 +34,6 @@ Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_initi
 
 /*
  * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
- * Method:    createMain
- * Signature: ()V
- */
-JNIEXPORT void JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_00024LLVMModuleGenerator_createMain
-(JNIEnv*, jobject);
-
-/*
- * Class:     com_xiaoli_llvmir_generator_LLVMIRGenerator_LLVMModuleGenerator
  * Method:    visitGlobalData
  * Signature: (Lldk/l/lg/ir/base/IRGlobalDataSection/GlobalData;Ljava/lang/Object;)Ljava/lang/Object;
  */
