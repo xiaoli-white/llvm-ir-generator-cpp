@@ -660,159 +660,171 @@ JNIEXPORT jobject JNICALL Java_com_xiaoli_llvmir_1generator_LLVMIRGenerator_0002
     jlong argumentCount = env->GetLongField(irFunction, env->GetFieldID(irFunctionClazz, "argumentCount", "J"));
     const auto fields = reinterpret_cast<jobjectArray>(env->GetObjectField(
         irFunction, env->GetFieldID(irFunctionClazz, "fields", "[Lldk/l/lg/ir/structure/IRField;")));
-
-    auto* functionName = env->GetStringUTFChars(name, nullptr);
-    auto* function = module->getFunction(functionName);
-    env->SetLongField(thisPtr, env->GetFieldID(clazz, "currentFunction", "J"), reinterpret_cast<jlong>(function));
-
-    auto* stack = new std::stack<llvm::Value*>();
-    env->SetLongField(thisPtr, env->GetFieldID(clazz, "stack", "J"), reinterpret_cast<jlong>(stack));
-
-    auto* basicBlockMap = new std::map<std::string, llvm::BasicBlock*>();
-    env->SetLongField(thisPtr, env->GetFieldID(clazz, "basicBlockMap", "J"), reinterpret_cast<jlong>(basicBlockMap));
-
-    auto* virtualRegister2Value = new std::map<std::string, llvm::Value*>();
-    env->SetLongField(thisPtr, env->GetFieldID(clazz, "virtualRegister2Value", "J"),
-                      reinterpret_cast<jlong>(virtualRegister2Value));
-
-    auto* field2LocalVar = new std::map<std::string, llvm::AllocaInst*>();
-    env->SetLongField(thisPtr, env->GetFieldID(clazz, "field2LocalVar", "J"), reinterpret_cast<jlong>(field2LocalVar));
-
-    auto* initBlock = llvm::BasicBlock::Create(*context, "init", function);
-    builder->SetInsertPoint(initBlock);
-    int i;
-    for (i = 0; i < argumentCount; i++)
+    const auto attributes = env->GetObjectField(
+        irFunction, env->GetFieldID(irFunctionClazz, "attributes", "Ljava/util/List;"));
+    auto externString = env->NewStringUTF("extern");
+    if (!env->CallBooleanMethod(
+        attributes, env->GetMethodID(env->GetObjectClass(attributes), "contains", "(Ljava/lang/Object;)Z"),
+        externString))
     {
-        auto* field = env->GetObjectArrayElement(fields, i);
-        auto* irFieldClazz = env->GetObjectClass(field);
-        auto* fieldNameObject = reinterpret_cast<jstring>(env->GetObjectField(
-            field, env->GetFieldID(irFieldClazz, "name", "Ljava/lang/String;")));
-        auto* fieldName = env->GetStringUTFChars(fieldNameObject, nullptr);
-        auto* inst = builder->CreateAlloca(getType(
-                                               env, env->GetObjectField(
-                                                   field, env->GetFieldID(
-                                                       irFieldClazz, "type", "Lldk/l/lg/ir/type/IRType;")),
-                                               context), nullptr, fieldName);
-        inst->setAlignment(llvm::Align(1));
-        auto* arg = function->getArg(i);
-        builder->CreateStore(arg, inst);
+        auto* functionName = env->GetStringUTFChars(name, nullptr);
+        auto* function = module->getFunction(functionName);
+        env->SetLongField(thisPtr, env->GetFieldID(clazz, "currentFunction", "J"), reinterpret_cast<jlong>(function));
 
-        field2LocalVar->insert(std::make_pair(std::string(env->GetStringUTFChars(
-                                                  reinterpret_cast<jstring>(env->GetObjectField(
-                                                      field, env->GetFieldID(
-                                                          env->GetObjectClass(field), "name", "Ljava/lang/String;"))),
-                                                  nullptr)), inst));
-        env->ReleaseStringUTFChars(fieldNameObject, fieldName);
-    }
-    for (; i < env->GetArrayLength(fields); i++)
-    {
-        auto* field = env->GetObjectArrayElement(fields, i);
-        auto* irFieldClazz = env->GetObjectClass(field);
-        auto* fieldNameObject = reinterpret_cast<jstring>(env->GetObjectField(
-            field, env->GetFieldID(irFieldClazz, "name", "Ljava/lang/String;")));
-        auto* fieldName = env->GetStringUTFChars(fieldNameObject, nullptr);
-        auto* inst = builder->CreateAlloca(getType(
-                                               env, env->GetObjectField(
-                                                   field, env->GetFieldID(
-                                                       irFieldClazz, "type", "Lldk/l/lg/ir/type/IRType;")),
-                                               context), nullptr, fieldName);
-        inst->setAlignment(llvm::Align(1));
+        auto* stack = new std::stack<llvm::Value*>();
+        env->SetLongField(thisPtr, env->GetFieldID(clazz, "stack", "J"), reinterpret_cast<jlong>(stack));
 
-        field2LocalVar->insert(std::make_pair(std::string(env->GetStringUTFChars(
-                                                  reinterpret_cast<jstring>(env->GetObjectField(
-                                                      field, env->GetFieldID(
-                                                          env->GetObjectClass(field), "name", "Ljava/lang/String;"))),
-                                                  nullptr)), inst));
-        env->ReleaseStringUTFChars(fieldNameObject, fieldName);
-    }
+        auto* basicBlockMap = new std::map<std::string, llvm::BasicBlock*>();
+        env->SetLongField(thisPtr, env->GetFieldID(clazz, "basicBlockMap", "J"),
+                          reinterpret_cast<jlong>(basicBlockMap));
 
-    int basicBlockCount = 0;
+        auto* virtualRegister2Value = new std::map<std::string, llvm::Value*>();
+        env->SetLongField(thisPtr, env->GetFieldID(clazz, "virtualRegister2Value", "J"),
+                          reinterpret_cast<jlong>(virtualRegister2Value));
 
-    auto* cfg = env->GetObjectField(
-        irFunction, env->GetFieldID(irFunctionClazz, "controlFlowGraph", "Lldk/l/lg/ir/base/IRControlFlowGraph;"));
-    env->SetObjectField(
-        thisPtr, env->GetFieldID(clazz, "currentCFG", "Lldk/l/lg/ir/base/IRControlFlowGraph;"), cfg);
+        auto* field2LocalVar = new std::map<std::string, llvm::AllocaInst*>();
+        env->SetLongField(thisPtr, env->GetFieldID(clazz, "field2LocalVar", "J"),
+                          reinterpret_cast<jlong>(field2LocalVar));
 
-    auto* basicBlocks = env->GetObjectField(
-        cfg, env->GetFieldID(env->GetObjectClass(cfg), "basicBlocks", "Ljava/util/Map;"));
-    auto* values = env->CallObjectMethod(basicBlocks,
-                                         env->GetMethodID(env->GetObjectClass(basicBlocks), "values",
-                                                          "()Ljava/util/Collection;"));
-    auto* iterator = env->CallObjectMethod(
-        values, env->GetMethodID(env->GetObjectClass(values), "iterator", "()Ljava/util/Iterator;"));
-    jmethodID hasNextMethod = env->GetMethodID(env->GetObjectClass(iterator), "hasNext", "()Z");
-    jmethodID nextMethod = env->GetMethodID(env->GetObjectClass(iterator), "next", "()Ljava/lang/Object;");
-    while (env->CallBooleanMethod(iterator, hasNextMethod))
-    {
-        auto* llvmIRBasicBlock = llvm::BasicBlock::Create(*context, "basicBlock_" + std::to_string(basicBlockCount++),
-                                                          function);
-        auto* basicBlock = env->CallObjectMethod(iterator, nextMethod);
-        auto* basicBlockName = reinterpret_cast<jstring>(env->GetObjectField(
-            basicBlock, env->GetFieldID(env->GetObjectClass(basicBlock), "name", "Ljava/lang/String;")));
-        auto* cString = env->GetStringUTFChars(basicBlockName, nullptr);
-        basicBlockMap->insert(std::make_pair(cString, llvmIRBasicBlock));
-    }
-    iterator = env->CallObjectMethod(
-        values, env->GetMethodID(env->GetObjectClass(values), "iterator", "()Ljava/util/Iterator;"));
-    hasNextMethod = env->GetMethodID(env->GetObjectClass(iterator), "hasNext", "()Z");
-    nextMethod = env->GetMethodID(env->GetObjectClass(iterator), "next", "()Ljava/lang/Object;");
-    jmethodID visitMethod = env->GetMethodID(clazz, "visit",
-                                             "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
-    jfieldID currentBasicBlockFieldID = env->GetFieldID(clazz, "currentBasicBlock",
-                                                        "Lldk/l/lg/ir/base/IRControlFlowGraph$BasicBlock;");
-    while (env->CallBooleanMethod(iterator, hasNextMethod))
-    {
-        auto* basicBlock = env->CallObjectMethod(iterator, nextMethod);
-        env->SetObjectField(thisPtr, currentBasicBlockFieldID, basicBlock);
-        auto* basicBlockName = reinterpret_cast<jstring>(env->GetObjectField(
-            basicBlock, env->GetFieldID(env->GetObjectClass(basicBlock), "name", "Ljava/lang/String;")));
-        auto* cString = env->GetStringUTFChars(basicBlockName, nullptr);
-        builder->SetInsertPoint(basicBlockMap->at(cString));
-        auto* instructions = env->GetObjectField(
-            basicBlock, env->GetFieldID(env->GetObjectClass(basicBlock), "instructions", "Ljava/util/List;"));
-        auto* iterator2 = env->CallObjectMethod(
-            instructions,
-            env->GetMethodID(env->GetObjectClass(instructions), "iterator", "()Ljava/util/Iterator;"));
-        auto* isEmptyMethod = env->GetMethodID(env->GetObjectClass(instructions), "isEmpty", "()Z");
-        jmethodID hasNextMethod2 = env->GetMethodID(env->GetObjectClass(iterator2), "hasNext", "()Z");
-        jmethodID nextMethod2 = env->GetMethodID(env->GetObjectClass(iterator2), "next", "()Ljava/lang/Object;");
-        if (env->CallBooleanMethod(instructions, isEmptyMethod))
+        auto* initBlock = llvm::BasicBlock::Create(*context, "init", function);
+        builder->SetInsertPoint(initBlock);
+        int i;
+        for (i = 0; i < argumentCount; i++)
         {
-            auto* doNothing = llvm::Intrinsic::getDeclaration(module, llvm::Intrinsic::donothing, {});
-            builder->CreateCall(doNothing, {});
+            auto* field = env->GetObjectArrayElement(fields, i);
+            auto* irFieldClazz = env->GetObjectClass(field);
+            auto* fieldNameObject = reinterpret_cast<jstring>(env->GetObjectField(
+                field, env->GetFieldID(irFieldClazz, "name", "Ljava/lang/String;")));
+            auto* fieldName = env->GetStringUTFChars(fieldNameObject, nullptr);
+            auto* inst = builder->CreateAlloca(getType(
+                                                   env, env->GetObjectField(
+                                                       field, env->GetFieldID(
+                                                           irFieldClazz, "type", "Lldk/l/lg/ir/type/IRType;")),
+                                                   context), nullptr, fieldName);
+            inst->setAlignment(llvm::Align(1));
+            auto* arg = function->getArg(i);
+            builder->CreateStore(arg, inst);
+
+            field2LocalVar->insert(std::make_pair(std::string(env->GetStringUTFChars(
+                                                      reinterpret_cast<jstring>(env->GetObjectField(
+                                                          field, env->GetFieldID(
+                                                              env->GetObjectClass(field), "name",
+                                                              "Ljava/lang/String;"))),
+                                                      nullptr)), inst));
+            env->ReleaseStringUTFChars(fieldNameObject, fieldName);
         }
-        else
+        for (; i < env->GetArrayLength(fields); i++)
         {
-            while (env->CallBooleanMethod(iterator2, hasNextMethod2))
+            auto* field = env->GetObjectArrayElement(fields, i);
+            auto* irFieldClazz = env->GetObjectClass(field);
+            auto* fieldNameObject = reinterpret_cast<jstring>(env->GetObjectField(
+                field, env->GetFieldID(irFieldClazz, "name", "Ljava/lang/String;")));
+            auto* fieldName = env->GetStringUTFChars(fieldNameObject, nullptr);
+            auto* inst = builder->CreateAlloca(getType(
+                                                   env, env->GetObjectField(
+                                                       field, env->GetFieldID(
+                                                           irFieldClazz, "type", "Lldk/l/lg/ir/type/IRType;")),
+                                                   context), nullptr, fieldName);
+            inst->setAlignment(llvm::Align(1));
+
+            field2LocalVar->insert(std::make_pair(std::string(env->GetStringUTFChars(
+                                                      reinterpret_cast<jstring>(env->GetObjectField(
+                                                          field, env->GetFieldID(
+                                                              env->GetObjectClass(field), "name",
+                                                              "Ljava/lang/String;"))),
+                                                      nullptr)), inst));
+            env->ReleaseStringUTFChars(fieldNameObject, fieldName);
+        }
+
+        int basicBlockCount = 0;
+
+        auto* cfg = env->GetObjectField(
+            irFunction, env->GetFieldID(irFunctionClazz, "controlFlowGraph", "Lldk/l/lg/ir/base/IRControlFlowGraph;"));
+        env->SetObjectField(
+            thisPtr, env->GetFieldID(clazz, "currentCFG", "Lldk/l/lg/ir/base/IRControlFlowGraph;"), cfg);
+
+        auto* basicBlocks = env->GetObjectField(
+            cfg, env->GetFieldID(env->GetObjectClass(cfg), "basicBlocks", "Ljava/util/Map;"));
+        auto* values = env->CallObjectMethod(basicBlocks,
+                                             env->GetMethodID(env->GetObjectClass(basicBlocks), "values",
+                                                              "()Ljava/util/Collection;"));
+        auto* iterator = env->CallObjectMethod(
+            values, env->GetMethodID(env->GetObjectClass(values), "iterator", "()Ljava/util/Iterator;"));
+        jmethodID hasNextMethod = env->GetMethodID(env->GetObjectClass(iterator), "hasNext", "()Z");
+        jmethodID nextMethod = env->GetMethodID(env->GetObjectClass(iterator), "next", "()Ljava/lang/Object;");
+        while (env->CallBooleanMethod(iterator, hasNextMethod))
+        {
+            auto* llvmIRBasicBlock = llvm::BasicBlock::Create(
+                *context, "basicBlock_" + std::to_string(basicBlockCount++),
+                function);
+            auto* basicBlock = env->CallObjectMethod(iterator, nextMethod);
+            auto* basicBlockName = reinterpret_cast<jstring>(env->GetObjectField(
+                basicBlock, env->GetFieldID(env->GetObjectClass(basicBlock), "name", "Ljava/lang/String;")));
+            auto* cString = env->GetStringUTFChars(basicBlockName, nullptr);
+            basicBlockMap->insert(std::make_pair(cString, llvmIRBasicBlock));
+        }
+        iterator = env->CallObjectMethod(
+            values, env->GetMethodID(env->GetObjectClass(values), "iterator", "()Ljava/util/Iterator;"));
+        hasNextMethod = env->GetMethodID(env->GetObjectClass(iterator), "hasNext", "()Z");
+        nextMethod = env->GetMethodID(env->GetObjectClass(iterator), "next", "()Ljava/lang/Object;");
+        jmethodID visitMethod = env->GetMethodID(clazz, "visit",
+                                                 "(Lldk/l/lg/ir/base/IRNode;Ljava/lang/Object;)Ljava/lang/Object;");
+        jfieldID currentBasicBlockFieldID = env->GetFieldID(clazz, "currentBasicBlock",
+                                                            "Lldk/l/lg/ir/base/IRControlFlowGraph$BasicBlock;");
+        while (env->CallBooleanMethod(iterator, hasNextMethod))
+        {
+            auto* basicBlock = env->CallObjectMethod(iterator, nextMethod);
+            env->SetObjectField(thisPtr, currentBasicBlockFieldID, basicBlock);
+            auto* basicBlockName = reinterpret_cast<jstring>(env->GetObjectField(
+                basicBlock, env->GetFieldID(env->GetObjectClass(basicBlock), "name", "Ljava/lang/String;")));
+            auto* cString = env->GetStringUTFChars(basicBlockName, nullptr);
+            builder->SetInsertPoint(basicBlockMap->at(cString));
+            auto* instructions = env->GetObjectField(
+                basicBlock, env->GetFieldID(env->GetObjectClass(basicBlock), "instructions", "Ljava/util/List;"));
+            auto* iterator2 = env->CallObjectMethod(
+                instructions,
+                env->GetMethodID(env->GetObjectClass(instructions), "iterator", "()Ljava/util/Iterator;"));
+            auto* isEmptyMethod = env->GetMethodID(env->GetObjectClass(instructions), "isEmpty", "()Z");
+            jmethodID hasNextMethod2 = env->GetMethodID(env->GetObjectClass(iterator2), "hasNext", "()Z");
+            jmethodID nextMethod2 = env->GetMethodID(env->GetObjectClass(iterator2), "next", "()Ljava/lang/Object;");
+            if (env->CallBooleanMethod(instructions, isEmptyMethod))
             {
-                auto* instruction = env->CallObjectMethod(iterator2, nextMethod2);
-                env->CallObjectMethod(thisPtr, visitMethod, instruction, additional);
-                while (!stack->empty()) stack->pop();
+                auto* doNothing = llvm::Intrinsic::getDeclaration(module, llvm::Intrinsic::donothing, {});
+                builder->CreateCall(doNothing, {});
+            }
+            else
+            {
+                while (env->CallBooleanMethod(iterator2, hasNextMethod2))
+                {
+                    auto* instruction = env->CallObjectMethod(iterator2, nextMethod2);
+                    env->CallObjectMethod(thisPtr, visitMethod, instruction, additional);
+                    while (!stack->empty()) stack->pop();
+                }
+            }
+            env->ReleaseStringUTFChars(basicBlockName, cString);
+        }
+
+        for (auto it = function->begin(); it != function->end(); ++it)
+        {
+            auto tmp = it;
+            ++tmp;
+            auto end = it->end();
+            --end;
+            if (tmp != function->end() && (it->empty() || (!llvm::isa<llvm::BranchInst>(end) && !llvm::isa<
+                llvm::ReturnInst>(end))))
+            {
+                builder->SetInsertPoint(&*it);
+                builder->CreateBr(&*tmp);
             }
         }
-        env->ReleaseStringUTFChars(basicBlockName, cString);
+
+        env->ReleaseStringUTFChars(name, functionName);
+
+        delete virtualRegister2Value;
+        delete basicBlockMap;
+        delete stack;
     }
-
-    for (auto it = function->begin(); it != function->end(); ++it)
-    {
-        auto tmp = it;
-        ++tmp;
-        auto end = it->end();
-        --end;
-        if (tmp != function->end() && (it->empty() || (!llvm::isa<llvm::BranchInst>(end) && !llvm::isa<
-            llvm::ReturnInst>(end))))
-        {
-            builder->SetInsertPoint(&*it);
-            builder->CreateBr(&*tmp);
-        }
-    }
-
-    env->ReleaseStringUTFChars(name, functionName);
-
-    delete virtualRegister2Value;
-    delete basicBlockMap;
-    delete stack;
-
+    env->DeleteLocalRef(name);
     return nullptr;
 }
 
